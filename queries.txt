@@ -1,0 +1,22 @@
+Call Type_Priority
+Call Type Group_Call Type_Priority
+Original Priority_Call Type Group
+Priority_Original Priority_Call Type Group
+Call Type Group_Address
+Call Type_Call Type Group_Address
+Neighborhooods - Analysis Boundaries_Supervisor District
+Zipcode of Incident_Supervisor District
+Zipcode of Incident_Call Final Disposition
+Fire Prevention District_Call Final Disposition
+Call Type_Call Final Disposition
+Call Type_Number of Alarms
+Call Final Disposition_City
+Unit sequence in call dispatch_Number of Alarms
+Address_Neighborhooods - Analysis Boundaries_Supervisor District
+Address_Zipcode of Incident_Supervisor District
+Address_Zipcode of Incident_Call Final Disposition
+Address_Fire Prevention District_Call Final Disposition
+Address_Call Type_Call Final Disposition
+Address_Call Type_Number of Alarms
+Address_Call Final Disposition_City
+Address_Unit sequence in call dispatch_Number of Alarms

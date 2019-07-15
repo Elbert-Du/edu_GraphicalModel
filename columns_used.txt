@@ -1,0 +1,13 @@
+Call Type
+Priority
+Call Type Group
+Original Priority
+Address
+Neighborhooods - Analysis Boundaries
+Supervisor District
+Zipcode of Incident
+Call Final Disposition
+Fire Prevention District
+Number of Alarms
+City
+Unit sequence in call dispatch
