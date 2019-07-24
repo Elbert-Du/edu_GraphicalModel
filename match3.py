@@ -261,5 +261,5 @@ if __name__ == '__main__':
         weight3 = 6.0
 
     mech = Match3(args.dataset, args.specs, args.domain, args.mapping, iters=iters, weight3=weight3, warmup=True)
-
-    mech.run(args.epsilon, args.delta, args.save)
+    mech.shrink_domain(args.epsilon,args.delta)
+    mech.run(args.save,round2)#round2 is a query list [   ]
