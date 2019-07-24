@@ -80,56 +80,6 @@ def moments_calibration(round1, round2, eps, delta):
     assert obj(sigma) - 1e-8 <= 0, 'not differentially private' # true eps <= requested eps
     return sigma
 
-def shrink_domain(self,epsilon, delta=2.2820610e-12):
-    self.round1=list(self.domain)
-    self.epsilon=epsilon
-    self.delta=delta
-    data=self.load_data(is_encoded=True)
-    sigma = moments_calibration(1.0, 1.0, epsilon, delta)
-    print('NOISE LEVEL:', sigma)
-    weights = np.ones(len(self.round1))
-    weights /= np.linalg.norm(weights) # now has L2 norm = 1
-
-    supports = {}
-
-    self.measurements = []
-    for col, wgt in zip(self.round1, weights):
-        ##########################
-        ### Noise-addition step ##
-        ##########################
-        proj = (col,)
-        hist = np.asarray(data[col].value_counts())
-        print(hist)
-        noise = sigma*np.random.randn(hist.size)
-        y = wgt*hist + noise
-
-        #####################
-        ## Post-processing ##
-        #####################
-
-        sup = y >= 3*sigma
-
-        supports[col] = sup
-        print(col, self.domain[col], sup.sum())
-        #print(col, len(self.domain[col]), sup.sum())
-
-        if sup.sum() == y.size:
-            y2 = y
-            I2 = matrix.Identity(y.size)
-        else:
-            y2 = np.append(y[sup], y[~sup].sum())
-            I2 = np.ones(y2.size)
-            I2[-1] = 1.0 / np.sqrt(y.size - y2.size + 1.0)
-            y2[-1] /= np.sqrt(y.size - y2.size + 1.0)
-            I2 = sparse.diags(I2)
-
-        self.measurements.append( (I2, y2/wgt, 1.0/wgt, proj) )
-    self.supports=supports
-    data,new_domain=transform_data(data,self.domain,supports)
-    self.domain=new_domain
-    self.data=data
-    return data, new_domain
-
 class Match3(Mechanism):
 
     def __init__(self, dataset, specs, domain, mapping, measurements, supports, sigma, iters=1000, weight3=1.0, warmup=False):
