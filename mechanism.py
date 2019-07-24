@@ -106,7 +106,7 @@ class Mechanism:
         return df
 
 
-    def run(self, epsilon, delta = 2.2820610e-12, save=None):
+    def run(self, save=None,round2):
         """ Run the mechanism at the given privacy level and return the synthetic data
 
         :param epsilon: the privacy budget
@@ -114,11 +114,11 @@ class Mechanism:
         :param save: location to save the synthetic data
         :return: the synthetic data in the same format as original data
         """
-        self.epsilon = epsilon
-        self.delta = delta
+#        self.epsilon = epsilon
+#        self.delta = delta
         self.save = save
-        self.setup()
-        self.measure()
+#        self.setup()
+        self.measure(round2)
         self.postprocess()
         self.synthetic.df = self.transform_domain(self.synthetic.df, self.mapping)
         if save is not None:
