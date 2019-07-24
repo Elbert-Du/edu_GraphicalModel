@@ -49,12 +49,12 @@ def reverse_data(data, supports):
         mx = support.sum()
         newdom[col] = int(support.size)
         idx, extra = np.where(support)[0], np.where(~support)[0]
-        mask = df[col] == mx
-        if extra.size == 0:
-            pass
-        else:
-            df.loc[mask, col] = np.random.choice(extra, mask.sum())
-        df.loc[~mask, col] = idx[df.loc[~mask, col]]
+    mask = df[col] == mx
+    if extra.size == 0:
+        pass
+    else:
+        df.loc[mask, col] = np.random.choice(extra, mask.sum())
+    df.loc[~mask, col] = idx[df.loc[~mask, col]]
     newdom = Domain.fromdict(newdom)
     return Dataset(df, newdom)
 
@@ -80,9 +80,52 @@ def moments_calibration(round1, round2, eps, delta):
     assert obj(sigma) - 1e-8 <= 0, 'not differentially private' # true eps <= requested eps
     return sigma
 
+def shrink_domain(data, specs, epsilon, delta, attributes):
+    sigma = moments_calibration(1.0, 1.0, epsilon, delta)
+    print('NOISE LEVEL:', sigma)
+    weights = np.ones(len(attributes))
+    #weights[self.round1.index('INCWAGE_A')] *= 2.0
+    weights /= np.linalg.norm(weights) # now has L2 norm = 1
+
+    supports = {}
+
+    measurements = []
+    for col, wgt in zip(attributes, weights):
+        ##########################
+        ### Noise-addition step ##
+        ##########################
+        proj = (col,)
+        hist = np.asarray(data[col].value_counts())
+        print(hist)
+        noise = sigma*np.random.randn(hist.size)
+        y = wgt*hist + noise
+
+        #####################
+        ## Post-processing ##
+        #####################
+
+        sup = y >= 3*sigma
+
+        supports[col] = sup
+        print(col, self.domain[col], sup.sum())
+        #print(col, len(self.domain[col]), sup.sum())
+
+        if sup.sum() == y.size:
+            y2 = y
+            I2 = matrix.Identity(y.size)
+        else:
+            y2 = np.append(y[sup], y[~sup].sum())
+            I2 = np.ones(y2.size)
+            I2[-1] = 1.0 / np.sqrt(y.size - y2.size + 1.0)
+            y2[-1] /= np.sqrt(y.size - y2.size + 1.0)
+            I2 = sparse.diags(I2)
+
+        measurements.append( (I2, y2/wgt, 1.0/wgt, proj) )
+    return(measurements, supports)
+
 class Match3(Mechanism):
 
-    def __init__(self, dataset, specs, domain, mapping, iters=1000, weight3=1.0, warmup=False):
+    def __init__(self, dataset, specs, domain, mapping, measurements, supports, sigma, iters=1000, weight3=1.0, warmup=False):
         #domain = json.load(open("domain.json"))
         Mechanism.__init__(self, dataset, specs, domain, mapping)
         self.iters = iters
@@ -90,6 +133,9 @@ class Match3(Mechanism):
         self.warmup = warmup
         self.elimination_order = None
         self.mapping = mapping
+        self.measurements = measurements
+        self.supports = supports
+        self.sigma = sigma
 
         #Qa = np.zeros((5,52))
         #Qa[0,0] = 1
@@ -99,6 +145,8 @@ class Match3(Mechanism):
         #Qa[4,51] = 1
 
         #self.Q_INCWAGE = Qa
+    
+
     
     def setup(self):
         self.round1 = list(self.domain)
@@ -114,49 +162,8 @@ class Match3(Mechanism):
         data = self.load_data(is_encoded = True)
         #print(data.head())
         # round1 and round2 measurements will be weighted to have L2 sensitivity 1
-        sigma = moments_calibration(1.0, 1.0, self.epsilon, self.delta)
-        print('NOISE LEVEL:', sigma)
+        print('NOISE LEVEL:', self.sigma)
 
-        weights = np.ones(len(self.round1))
-        #weights[self.round1.index('INCWAGE_A')] *= 2.0
-        weights /= np.linalg.norm(weights) # now has L2 norm = 1
-
-        supports = {}
-  
-        self.measurements = []
-        for col, wgt in zip(self.round1, weights):
-            ##########################
-            ### Noise-addition step ##
-            ##########################
-            proj = (col,)
-            hist = np.asarray(data[col].value_counts())
-            print(hist)
-            noise = sigma*np.random.randn(hist.size)
-            y = wgt*hist + noise
-          
-            #####################
-            ## Post-processing ##
-            #####################
-
-            sup = y >= 3*sigma
-
-            supports[col] = sup
-            print(col, self.domain[col], sup.sum())
-            #print(col, len(self.domain[col]), sup.sum())
-
-            if sup.sum() == y.size:
-                y2 = y
-                I2 = matrix.Identity(y.size)
-            else:
-                y2 = np.append(y[sup], y[~sup].sum())
-                I2 = np.ones(y2.size)
-                I2[-1] = 1.0 / np.sqrt(y.size - y2.size + 1.0)
-                y2[-1] /= np.sqrt(y.size - y2.size + 1.0)
-                I2 = sparse.diags(I2)
-
-            self.measurements.append( (I2, y2/wgt, 1.0/wgt, proj) )
-
-        self.supports = supports
         # perform round 2 measurments over compressed domain
         data, new_domain = transform_data(data,self.domain, supports)
         self.domain = new_domain
@@ -168,15 +175,7 @@ class Match3(Mechanism):
             if temp < 1e6:
                 temp_list.append(cl)
         self.round2 = temp_list
-                
-        #self.round2 = [cl for cl in self.round2 if len(self.domain[cl] < 1e6]
-        #weights = np.ones(len(self.round2))
-        #weights[self.round2.index(('SEX','CITY','INCWAGE_A'))] *= self.weight3
-        #weights[self.round2.index(('SEX','CITY'))] *= 2.0
-        #weights[self.round2.index(('SEX','INCWAGE_A'))] *= 2.0
-        #weights[self.round2.index(('CITY','INCWAGE_A'))] *= 2.0
-        #weights /= np.linalg.norm(weights) # now has L2 norm = 1
-   
+
         for proj, wgt in zip(self.round2, weights):
             #########################
             ## Noise-addition step ##
@@ -186,7 +185,7 @@ class Match3(Mechanism):
             hist = datavector(data[list(proj)], indices)
             Q = matrix.Identity(hist.size)
 
-            noise = sigma*np.random.randn(Q.shape[0])
+            noise = self.sigma*np.random.randn(Q.shape[0])
             y = wgt*Q.dot(hist) + noise
             self.measurements.append( (Q, y/wgt, 1.0/wgt, proj) )
 
