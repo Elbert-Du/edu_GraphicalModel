@@ -80,49 +80,6 @@ def moments_calibration(round1, round2, eps, delta):
     assert obj(sigma) - 1e-8 <= 0, 'not differentially private' # true eps <= requested eps
     return sigma
 
-def shrink_domain(data, specs, epsilon, delta, attributes):
-    sigma = moments_calibration(1.0, 1.0, epsilon, delta)
-    print('NOISE LEVEL:', sigma)
-    weights = np.ones(len(attributes))
-    #weights[self.round1.index('INCWAGE_A')] *= 2.0
-    weights /= np.linalg.norm(weights) # now has L2 norm = 1
-
-    supports = {}
-
-    measurements = []
-    for col, wgt in zip(attributes, weights):
-        ##########################
-        ### Noise-addition step ##
-        ##########################
-        proj = (col,)
-        hist = np.asarray(data[col].value_counts())
-        print(hist)
-        noise = sigma*np.random.randn(hist.size)
-        y = wgt*hist + noise
-
-        #####################
-        ## Post-processing ##
-        #####################
-
-        sup = y >= 3*sigma
-
-        supports[col] = sup
-        print(col, self.domain[col], sup.sum())
-        #print(col, len(self.domain[col]), sup.sum())
-
-        if sup.sum() == y.size:
-            y2 = y
-            I2 = matrix.Identity(y.size)
-        else:
-            y2 = np.append(y[sup], y[~sup].sum())
-            I2 = np.ones(y2.size)
-            I2[-1] = 1.0 / np.sqrt(y.size - y2.size + 1.0)
-            y2[-1] /= np.sqrt(y.size - y2.size + 1.0)
-            I2 = sparse.diags(I2)
-
-        measurements.append( (I2, y2/wgt, 1.0/wgt, proj) )
-    return(measurements, supports)
-
 class Match3(Mechanism):
 
     def __init__(self, dataset, specs, domain, mapping, measurements, supports, sigma, iters=1000, weight3=1.0, warmup=False):
@@ -136,53 +93,71 @@ class Match3(Mechanism):
         self.measurements = measurements
         self.supports = supports
         self.sigma = sigma
-
-        #Qa = np.zeros((5,52))
-        #Qa[0,0] = 1
-        #Qa[1,1:10] = 1
-        #Qa[2,10:20] = 1
-        #Qa[3,20:51] = 1
-        #Qa[4,51] = 1
-
-        #self.Q_INCWAGE = Qa
     
+    def shrink_domain(self,epsilon, delta=2.2820610e-12):
+        self.round1=list(self.domain)
+        self.epsilon=epsilon
+        self.delta=delta
+        data=self.load_data(is_encoded=True)
+        sigma = moments_calibration(1.0, 1.0, epsilon, delta)
+        print('NOISE LEVEL:', sigma)
+        weights = np.ones(len(self.round1))
+        weights /= np.linalg.norm(weights) # now has L2 norm = 1                                                                                                                                               
+        supports = {}
 
-    
-    def setup(self):
-        self.round1 = list(self.domain)
-        selected_queries = []
-        a = open("queries.txt", 'r')
-        for line in a.readlines():
-            temp = tuple(line.strip('\n').split('_'))
-            selected_queries.append(temp)
-        self.round2 = selected_queries
-        print(selected_queries)
-                                        
-    def measure(self):
-        data = self.load_data(is_encoded = True)
+        self.measurements = []
+        for col, wgt in zip(self.round1, weights):
+            ##########################                                                                                                                                                                          
+            ### Noise-addition step ##                                                                                                                                                                          
+            ##########################                                                                                                                                                                     
+            proj = (col,)
+            hist = np.asarray(data[col].value_counts())
+            print(hist)
+            noise = sigma*np.random.randn(hist.size)
+            y = wgt*hist + noise
+            
+            #####################                                                                                                                                                                               
+            ## Post-processing ##                                                                                                                                                                               
+            #####################                                                                                                                                                                         
+            sup = y >= 3*sigma
+            supports[col] = sup
+            print(col, self.domain[col], sup.sum())
+            #print(col, len(self.domain[col]), sup.sum())                                                                                                                                                  
+            if sup.sum() == y.size:
+                y2 = y
+                I2 = matrix.Identity(y.size)
+            else:
+                y2 = np.append(y[sup], y[~sup].sum())
+                I2 = np.ones(y2.size)
+                I2[-1] = 1.0 / np.sqrt(y.size - y2.size + 1.0)
+                y2[-1] /= np.sqrt(y.size - y2.size + 1.0)
+                I2 = sparse.diags(I2)
+                
+            self.measurements.append( (I2, y2/wgt, 1.0/wgt, proj) )
+        self.supports=supports
+        data,new_domain=transform_data(data,self.domain,supports)
+        self.domain=new_domain
+        self.data=data
+        return data, new_domain
+
+            
+    def measure(self,round2):
+        self.round2=round2  #round2 is a query list[]
+ #       data = self.load_data(is_encoded = True)
         #print(data.head())
         # round1 and round2 measurements will be weighted to have L2 sensitivity 1
-        print('NOISE LEVEL:', self.sigma)
+   #     print('NOISE LEVEL:', self.sigma)
 
         # perform round 2 measurments over compressed domain
-        data, new_domain = transform_data(data,self.domain, supports)
-        self.domain = new_domain
-        temp_list = []
-        for cl in self.round2:
-            temp = 1
-            for col in cl:
-                temp = temp*self.domain[col]
-            if temp < 1e6:
-                temp_list.append(cl)
-        self.round2 = temp_list
-
+        weights = np.ones(len(self.round2))
+        weights /= np.linalg.norm(weights) # now has L2 norm = 1
         for proj, wgt in zip(self.round2, weights):
             #########################
             ## Noise-addition step ##
             #########################
             indices = itemgetter(*proj)(self.domain)
             print(proj, indices)
-            hist = datavector(data[list(proj)], indices)
+            hist = datavector(self.data[list(proj)], indices)
             Q = matrix.Identity(hist.size)
 
             noise = self.sigma*np.random.randn(Q.shape[0])
@@ -286,5 +261,5 @@ if __name__ == '__main__':
         weight3 = 6.0
 
     mech = Match3(args.dataset, args.specs, args.domain, args.mapping, iters=iters, weight3=weight3, warmup=True)
-
-    mech.run(args.epsilon, args.delta, args.save)
+    mech.shrink_domain(args.epsilon,args.delta)
+    mech.run(args.save,round2)#round2 is a query list [   ]
