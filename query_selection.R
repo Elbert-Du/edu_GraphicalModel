@@ -1,6 +1,6 @@
 library(sets)
 library(LaplacesDemon)
-#setwd("GraphicalModel/edu_GraphicalModel")
+setwd("GraphicalModel/edu_GraphicalModel")
 data = read.csv("competitor_pack/data/fire-data-2.csv", nrows = 100000)
 #not DP, just using this for a test. user would specify domain normally.
 domain = list()
@@ -10,8 +10,426 @@ for (i in 1:dim(data)[2]) {
 
 epsilon = 1
 delta = 1e-6
-sensitivity = 10
+sensitivity = 1
 max_domain_size = 100000
+
+
+isDP <- function(params, d_g, e_g, err){
+  # Function called by update parameters when using 
+  # optimal composition approximation
+  #
+  # Args:
+  #	params: a kx2 matrix where the first column corresponds to epsilon_i values and the second 
+  # 			corresponds to delta_i values. 
+  #	d_g: global delta value
+  #	e_g: global epsilon value
+  #   err: error parameter
+  # Returns:
+  #	Boolean indicating whether the given parameters satisfy (e_g,d_g)-DP or not. Since this is 
+  #   an approximation (with error governed by err) it is not always correct. However, it will never 
+  #   say something satisfies privacy when it doesn't. 
+  
+  elist <- params[,1] 
+  dlist <- params[,2]
+  k <- length(elist)
+  
+  # First check if the KOV composition theorems can decide privacy:
+  if(max(elist) == min(elist) & max(dlist) == min(dlist)){
+    eps <- KOVhom(params, d_g)
+    if(eps <= e_g){
+      return(T)
+    }
+    else {
+      return(F)
+    }
+  }
+  else {
+    eps <- KOVhet(params, d_g)
+    if(eps <= e_g){
+      return(T)
+    }
+  }
+  
+  # sort parameters by epsilon value (needed for dynamic programming step)
+  params <- params[order(params[,1]), ] 
+  
+  # discretize privacy parameters and e_g
+  beta <- err/(k+sum(elist)+1)
+  e0 <- log(1+beta)
+  as <- ceiling(elist*((1/beta)+1))
+  astar <- floor(e_g/e0)
+  return(isDPinternal(as, beta, dlist, astar, d_g))
+  
+}
+
+
+knapsack <- function(k, B, as, weights){
+  # Helper function for isDP and isDPinternal. Runs dynamic programming procedure 
+  # described in [MV16] Lemma 5.1.  
+  
+  prevrow <- rep(1,times=(B+1))
+  for(r in 1:length(as)){
+    ar <- as[r]
+    wr <- weights[r]
+    prevrow[(ar+1):(B+1)] <- prevrow[(ar+1):(B+1)] + wr*prevrow[1:(B+1-ar)]	
+  }
+  return(prevrow[B+1])
+}
+
+
+isDPinternal <- function(as, beta, dlist, astar, d_g){
+  # Helper function for approxComp. Decides given the input privacy
+  # parameters and a guess for global epsilon, whether or not privacy
+  # is satisfied.
+  
+  k <- length(as)
+  sum <- sum(as)
+  
+  # beta lets us convert between integer as and epsilons, 
+  base <- 1+beta
+  eterm <- prod(1+base^as)
+  dterm <- prod(1-dlist)
+  
+  #Right hand side of optimal composition condition
+  RHS <- eterm*(1-((1-d_g)/dterm))
+  coef1 <- base^sum
+  coef2 <- base^astar
+  B <- floor((sum-astar)/2)
+  
+  # For dynamic programming, only need as that are less than B
+  as <- subset(as, as<=B)
+  # If all as are larger than B, privacy is trivially achieved:
+  if(length(as)==0){
+    #only nonzero set contains all epsilons
+    LHS <- coef1-coef2
+  }
+  else{
+    # Set weights for dynamic program as described in [MV16] Lemma 5.2
+    weights1 <- base^(-as)
+    weights2 <- base^as
+    
+    # run dynamic programming procedure
+    t1 <- knapsack(k, B, as, weights1)
+    t2 <- knapsack(k, B, as, weights2)
+    
+    # outputs of the dynamic programming give us left hand side of
+    # optimal composition condition.
+    LHS <- coef1*t1 - coef2*t2
+  }
+  if(LHS <= RHS){
+    return(T)
+  }
+  else{
+    return(F)
+  }
+}
+
+
+approxComp <- function(params, d_g, err=.01){
+  # Yields an approximation of optimal global epsilon for the given privacy
+  # parameters with additive error err and multiplicative error of 2^(-err/2) on
+  # global delta (Theorem 1.7 in Murtagh, Vadhan '16) 
+  #
+  # Args:
+  #	params: a kx2 matrix where the first column corresponds to epsilon_i values and the second 
+  # 			corresponds to delta_i values. 
+  #	d_g: global delta value
+  #   err: error parameter
+  # Returns:
+  #	Approximation of optimal global epsilon for the composition of the input parameters
+  
+  # sort parameters by epsilon value (needed for dynamic programming step)
+  params <- params[order(params[,1]), ] 
+  elist <- params[,1] 
+  dlist <- params[,2]
+  k <- length(elist)
+  
+  # if the privacy parameters are homogeneous (they do not differ across statistics)
+  # just use the homogeneous optimal composition theorem KOV15.
+  if(max(elist) == min(elist) & max(dlist) == min(dlist)){
+    return(KOVhom(params, d_g))
+  }
+  
+  # Constrain binary search by the best available rapidly computable upper bound:
+  epsUpBound <- KOVhet(params, d_g)
+  
+  # Discretize epsilon values as described in [MV16]
+  beta <- err/(k+sum(elist)+1)
+  e0 <- log(1+beta)
+  as <- ceiling(elist*((1/beta)+1))
+  
+  # begin binary search for optimal epsilon
+  l <- 0
+  u <- ceiling(epsUpBound/e0)
+  done <- F
+  
+  # After termination astar is minimum integer such that e_g=astar*e0 satisfies privacy
+  count <- 0
+  while(!done){
+    astar <- l+floor(((u-l)/2))
+    
+    # Check if current astar*e0 satisfies privacy:
+    dp <- isDPinternal(as, beta, dlist, astar, d_g)
+    
+    # If it does, we can lower astar
+    if(dp){
+      if(u-l==1){
+        # astar is the answer
+        done <- T
+      }
+      else{
+        u <- astar
+      }
+    }
+    
+    # If we are not satisfying privacy, must try a larger astar
+    else {
+      if(u-l<=2){
+        # astar+1 is the answer
+        astar <- astar+1
+        done <- T
+      }
+      else{
+        l <- astar	
+      }
+    }
+  }
+  return(astar*e0)
+}
+
+
+
+computeLHS <- function(eguess, k, eps){
+  # helper function for KOVhom to compute 
+  # the left hand side in Theorem 3.3 [KOV15]
+  l <- ceiling((eguess+k*eps)/(2*eps))
+  sum <- 0
+  for(i in l:k){
+    sum <- sum+choose(k,i)*(exp(i*eps)-exp(eguess+eps*(k-i)))
+  }
+  return(sum)
+}
+
+KOVhom <- function(params, d_g){
+  # Computes the optimal composition theorem for the case when privacy parameters
+  # do not differ across statistics. Theorem 3.3 [KOV15]. 
+  # 
+  # Args:
+  #	params: a kx2 matrix where the first column corresponds to epsilon_i values and the second 
+  # 			corresponds to delta_i values. 
+  #	d_g: global delta value
+  #   
+  # Returns:
+  #	global epsilon value guaranteed from the composition
+  
+  k <- length(params[,1])
+  eps <- params[1,1]
+  del <- params[1,2]
+  eterm <- (1+exp(eps))^k
+  dterm <- (1-del)^k
+  RHS <- eterm*(1-((1-d_g)/dterm))
+  u <- k*eps
+  l <- 0
+  LHS <- Inf
+  e_g <- u
+  
+  # Must do binary search to approach optimal value
+  count <- 0
+  
+  # Completely arbitrary cutoff of 50 rounds. Should have a more principled approach.
+  while(count<50){
+    eguess <- l+((u-l)/2)
+    LHS <- computeLHS(eguess,k,eps)
+    
+    # If eguess satisfies privacy:
+    if(LHS <= RHS){
+      e_g <- eguess
+      u <- eguess
+    }
+    else{
+      l <- eguess
+    }
+    count <- count + 1
+  }
+  return(e_g)
+}
+
+
+KOVhet <- function(params, d_g, print=FALSE){
+  # Computes an upper bound of optimal composition (Theorem 3.5, [KOV15]). Works for 
+  # different settings of epsilons and deltas (heterogenous case). 
+  # Args:
+  #	params: a kx2 matrix where the first column corresponds to epsilon_i values and the second 
+  # 			corresponds to delta_i values. 
+  #	d_g: global delta value
+  #   print: Boolean that if TRUE will print each individual term of the theorem rather than just
+  #          the minimimum.
+  #   
+  # Returns:
+  #	global epsilon value guaranteed from the composition
+  
+  elist <- params[,1]
+  dlist <- params[,2]
+  k <- length(elist)
+  del_bar <- 1-((1-d_g)/prod(1-dlist))
+  sum_of_squares <- sum(elist^2)
+  
+  # Function that will be applied to the vector of epsilons
+  fun <- function(x){
+    return(((exp(x) - 1)*x)/(exp(x) + 1))		
+  }
+  
+  first_term <- sum(sapply(elist, FUN=fun))
+  
+  # a, b, and c will correspond to the first, second, and third expressions in 
+  # theorem 3.5 in KOV15. The minimum is returned.
+  
+  a <- sum(elist)
+  b <- first_term + sqrt((2*log(exp(1) + (sqrt(sum_of_squares)/del_bar)))*sum_of_squares)
+  c <- first_term + sqrt(2*log(1/del_bar)*sum_of_squares)
+  
+  # For testing purposes if one wants to print all three terms
+  if(print){
+    cat("\nFirst term: ", a)
+    cat("\nSecond term: ", b)
+    cat("\nThird term: ", c)
+    cat("\nFinal result: ", min(a,b,c), "\n")
+  }
+  
+  vec <- c(a,b,c)
+  
+  #If any of the outputs are NaN, return the minimum of the actual numerical results
+  if(sum(!is.na(vec)) == 0){
+    return(NaN)
+  }
+  else{
+    return(min(vec[which(!is.na(vec))]))
+  }	
+}
+
+update_parameters <- function(params, hold, eps, del){
+  #
+  # Args:
+  #	params: kx2 matrix of privacy parameters where column one corresponds
+  #			to epsilons and column two is deltas.
+  #	hold: vector of indices corresponding to rows of params that will not 
+  #		   be updated, either because they were just added or because the 
+  #		   user has requested that these values stay fixed (Hold feature). 
+  #	       If we are to update every parameter, set hold to 0. 
+  #	eps: global epsilon
+  #	del: global delta
+  #
+  # Returns:
+  #	kx2 matrix of updated parameters
+  
+  
+  # k is the total number of statistics currently selected
+  k <- length(params[ , 1])
+  
+  # If we are only calculating one statistic, allocate the whole budget to it.
+  if(k == 1){
+    params[1,1] <- eps
+    params[1,2] <- del
+    return(params)
+  }
+  
+  elist <- as.numeric(params[ ,1])
+  dlist <- as.numeric(params[ ,2])
+  #hard coded error tolerance for optimal composition approximation. Might do something more clever one day. 
+  #err <- eps/10
+  err <- .01
+  # Check if there are unset epsilon values
+  unsetEpsilons <- c(which(is.na(elist)), which(elist==" "), which(elist==""), which(elist==0))
+  unsetEpsilons <- unique(unsetEpsilons)
+  
+  # Get list of unheld (or free) epsilon indices
+  indices <- seq(1,k,1)
+  free <- indices[! indices %in% hold]
+  newEps <- -10
+  #if no epsilons are set: 
+  if(length(unsetEpsilons)==length(elist)){
+    tempElist <- rep(1,times=length(elist))
+    newElist <- scale_eps(tempElist, dlist, eps, del, free, err)
+    toReturn <- cbind(newElist, dlist)
+    return(toReturn)
+  }
+  else if(length(unsetEpsilons) > 0){
+    # collect all of the free epsilons that have been set
+    toAvg <- free[! free %in% unsetEpsilons]
+    tempElist <- elist
+    # replace all free epsilons with their average
+    tempElist[free] <- mean(tempElist[toAvg])
+    newElist <- scale_eps(tempElist, dlist, eps, del, free, err)
+    neweps <- newElist[free][1]
+    if(min(elist[toAvg])==max(elist[toAvg])){
+      # if all free unset epsilons are the same then newElist the right update
+      toReturn <- cbind(newElist, dlist)
+      return(toReturn)
+    }
+    else{
+      #set all unset epsilons to neweps and remove them from the free list
+      elist[unsetEpsilons] <- neweps
+      free <- free[! free %in% unsetEpsilons]
+    }
+  }
+  # if some epsilons are being held, check that the held ones alone don't exceed the budget:
+  else if(length(elist)>length(free)){
+    tempElist <- elist
+    tempElist[free] <- 0
+    dp <- isDP(cbind(tempElist,dlist), del, eps, err)
+    if(!dp){
+      return("error")
+    }
+  }
+  
+  newElist <- scale_eps(elist, dlist, eps, del, free, err)
+  toReturn <- cbind(newElist, dlist)
+  return(toReturn)
+}
+
+
+scale_eps <- function(elist, dlist, eps, del, free, err){
+  # This function returns a list of epsilon values
+  # where each epsilon in elist that is not being held
+  # is scaled by the same multiplicative factor until 
+  # composition is satisfied
+  
+  # Initialize parameters for binary search. 
+  l <- 0
+  u <- eps/max(elist)  # no epsilon value in the composition can exceed global eps
+  dp <- F
+  
+  goodlist <- c()
+  
+  # is there a better stopping condition?
+  while(u-l>.0001){	
+    # scaling factor		
+    r <- l + ((u - l)/2)
+    testElist <- elist
+    testElist[free] <- r*testElist[free]
+    test_params <- cbind(testElist, dlist)
+    dp <- isDP(test_params, del, eps, err)
+    
+    # Reset upper and lower bounds of the search depending on outcome of isDP
+    if(dp){
+      l <- r
+      goodlist <- testElist
+    }
+    else {
+      u <- r
+    }
+  }
+  # If result does not beat simple summing composition
+  total <- sum(goodlist)
+  if(total < eps){
+    toadd <- (eps-total)/length(free)
+    toaddlist <- rep(0,times=length(goodlist))
+    toaddlist[free] <- toadd
+    goodlist <- goodlist + toaddlist
+  }
+  return(goodlist)	
+}
+
 
 rlap = function(mu=0, b=1, size=1) {
   p <- runif(size) - 0.5
@@ -224,9 +642,9 @@ mutual_information = function(data, pair, type = "L1") {
   setB = set_complement(intersection, setB)
   a = as.vector(setA, mode = "integer")
   b = as.vector(setB, mode = "integer")
-  print(these_elements)
-  print(a)
-  print(b)
+  #print(these_elements)
+  #print(a)
+  #print(b)
   n = dim(data)[1]
   if_independent = outer(as.vector(table(data[,a])), as.vector(table(data[,b])))/n^2
   dim = c(length(table(data[,a])),length(table(data[,b])))
@@ -264,22 +682,33 @@ select_queries = function(data, max_domain_size, sensitivity, domain, epsilon, d
       }
     }
   }
+  init = rep(c(1/d,delta^2),d)
+  params = matrix(init, nrow = d, ncol = 2, byrow = TRUE)
+  optimal_values = update_parameters(params = params, hold=0, eps = epsilon, del=delta)
+  best_epsilon = optimal_values[1,1]
+  best_delta = optimal_values[1,2]
+  
   #Now choose queries with exponential mechanism, we take pairs of cliques
   #cliques build up over time so we keep adding to the set that we're looking at
   for (i in 1:d) {
+    print(i)
     #TO DO:Make this part work
     myMech = mechanismExponential()
     myMech$k = 1
     myMech$var.type = "character"
     myMech$n = n
-    myMech$epsilon = epsilon/(2*d)
-    myMech$delta = delta
+    myMech$epsilon = best_epsilon/2
+    myMech$delta = best_delta
     myMech$bins = list_of_pairs
     pair = myMech$evaluate(fun = mutual_information_vector, x = list_of_pairs, sens = sensitivity, postFun = identity, data = data, type = "L1")$release
     print(pair)
     S = as.set(strsplit(pair, ';')[[1]])
-    u = mutual_information(data, pair, "KL") + rnorm(n=1, mean=0, sd = 2*d*epsilon/n)
-    if (u > 4*d*epsilon/n) {
+    #Make sure each element of S is actually a single attribute
+    S = paste(as.character(S), collapse = ",")
+    S = as.set(strsplit(S, ',')[[1]])
+    
+    u = mutual_information(data, pair, "KL") + rnorm(n=1, mean=0, sd = 2*d/(best_epsilon*n))
+    if (u > 4*d/(best_epsilon*n)) {
       #remove all pairings that only use elements in pair
       for (pairing in list_of_pairs) {
         these_elements = as.set(strsplit(pairing, ';')[[1]])
@@ -289,14 +718,16 @@ select_queries = function(data, max_domain_size, sensitivity, domain, epsilon, d
       }
       new_clique = paste(as.character(S), collapse = ",")
       for (clique in Q) {
-        index = as.vector(set_union(clique,S), mode = "integer")
+        cliqueSet = as.set(strsplit(clique,',')[[1]])
+        index = as.vector(set_union(cliqueSet,S), mode = "integer")
+        #print(index)
         domain_size = 1
         for (attribute in index) {
-          domain_size = domain_size * length(domain[attribute])
+          domain_size = domain_size * length(domain[[attribute]])
         }
-        cliqueSet = as.set(strsplit(clique,',')[[1]])
+        #print(domain_size)
         if (!set_is_subset(cliqueSet, S) && domain_size < max_domain_size) {
-          
+          #print("chosen")
           new_pair = paste(as.character(c(new_clique, clique)),collapse = ";")
           list_of_pairs = c(list_of_pairs, new_pair)
         }
