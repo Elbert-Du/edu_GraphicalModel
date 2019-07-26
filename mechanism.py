@@ -106,6 +106,14 @@ class Mechanism:
         return df
 
 
+    def write_output(self,save):
+        self.save = save
+        self.synthetic.df = self.transform_domain(self.synthetic.df, self.mapping)
+        if save is not None:
+            self.synthetic.df.to_csv(save, index=False)
+        return self.synthetic
+    
+
     def run(self, save=None,round2):
         """ Run the mechanism at the given privacy level and return the synthetic data
 
