@@ -9,8 +9,13 @@ make_gm <- import("match3")
 path_to_data <- "competitor_pack/data/fire-data-2.csv"
 path_to_specs <- "competitor_pack/data/fire-data-specs.json"
 path_to_domain <- "domain.json"
+<<<<<<< HEAD
 path_to_mapping <- "competitor_pack/data/fire-data-specs-mapping.json"
 out_file_name <- "out.csv"
+=======
+path_to_mapping <- "competitor_pack/data/fire-data-specs-mapping.csv"
+save <- "output.csv" #todo where to save?
+>>>>>>> 9aa3deb62e9b60ea4da805cbdf0e9b3b509ddf14
 
 epslion = 1
 delta = 1e-6
@@ -20,6 +25,7 @@ data = read.csv(path_to_data, nrows = 100000)
 specs = fromJSON(paste(readLines(path_to_specs)))
 domain = fromJSON(paste(readLines(path_to_domain)))
 mapping = fromJSON(paste(readLines(path_to_mapping)))
+
 
 num_iters <- 1000
 wrapper <- function(data, specs, domain, mapping, epsilon, delta, num_iters, out) {
@@ -31,5 +37,9 @@ wrapper <- function(data, specs, domain, mapping, epsilon, delta, num_iters, out
   queries = select_queries(compressed_data, n, sensitivity = 1, domain = compressed_domain, epsilon = epsilon/3, delta = delta)
   mech$measure(queries)
   mech$postprocess()
+<<<<<<< HEAD
   mech$write_output(out)
+=======
+  mech$write_output(save)
+>>>>>>> 9aa3deb62e9b60ea4da805cbdf0e9b3b509ddf14
 }
