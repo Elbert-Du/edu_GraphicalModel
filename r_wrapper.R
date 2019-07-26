@@ -10,6 +10,7 @@ path_to_data <- "competitor_pack/data/fire-data-2.csv"
 path_to_specs <- "competitor_pack/data/fire-data-specs.csv"
 path_to_domain <- "domain.json"
 path_to_mapping <- "competitor_pack/data/fire-data-specs-mapping.csv"
+save <- "output.csv" #todo where to save?
 
 epslion = 1
 delta = 1e-6
@@ -19,6 +20,7 @@ data = read.csv(path_to_data)
 specs = fromJSON(path_to_specs)
 domain = fromJSON(path_to_domain)
 mapping = fromJSON(path_to_mapping)
+
 
 num_iters <- 1000
 wrapper <- function(data, specs, domain, mapping, epsilon, delta, num_iters) {
@@ -30,5 +32,5 @@ wrapper <- function(data, specs, domain, mapping, epsilon, delta, num_iters) {
   queries = select_queries(compressed_data, n, sensitivity = 1, domain = compressed_domain, epsilon = epsilon/3, delta = delta)
   mech$measure(queries)
   mech$postprocess()
-  mech$write_output()
+  mech$write_output(save)
 }
