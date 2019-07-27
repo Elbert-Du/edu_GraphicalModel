@@ -82,7 +82,7 @@ def moments_calibration(round1, round2, eps, delta):
 
 class Match3(Mechanism):
 
-    def __init__(self, dataset, specs, domain, mapping, measurements, supports, sigma, iters=1000, weight3=1.0, warmup=False):
+    def __init__(self, dataset, specs, domain, mapping, iters=1000, weight3=1.0, warmup=False):
         #domain = json.load(open("domain.json"))
         Mechanism.__init__(self, dataset, specs, domain, mapping)
         self.iters = iters
@@ -90,9 +90,9 @@ class Match3(Mechanism):
         self.warmup = warmup
         self.elimination_order = None
         self.mapping = mapping
-        self.measurements = measurements
-        self.supports = supports
-        self.sigma = sigma
+     #   self.measurements = measurements
+     #   self.supports = supports
+     #   self.sigma = sigma
     
     def shrink_domain(self,epsilon, delta=2.2820610e-12):
         self.round1=list(self.domain)
@@ -100,6 +100,7 @@ class Match3(Mechanism):
         self.delta=delta
         data=self.load_data(is_encoded=True)
         sigma = moments_calibration(1.0, 1.0, epsilon, delta)
+        self.sigma = sigma 
         print('NOISE LEVEL:', sigma)
         weights = np.ones(len(self.round1))
         weights /= np.linalg.norm(weights) # now has L2 norm = 1                                                                                                                                               
@@ -257,9 +258,15 @@ if __name__ == '__main__':
         iters = 10000
         weight3 = 4.0
     else:
-        iters = 7500
+        iters = 750 #7500
         weight3 = 6.0
 
     mech = Match3(args.dataset, args.specs, args.domain, args.mapping, iters=iters, weight3=weight3, warmup=True)
     mech.shrink_domain(args.epsilon,args.delta)
-    mech.run(args.save,round2)#round2 is a query list [   ]
+    selected_queries = []
+    a = open("queries.txt", 'r')
+    for line in a.readlines():
+        temp = tuple(line.strip('\n').split('_'))
+        selected_queries.append(temp)
+    round2=selected_queries    
+    mech.run(round2, args.save) #round2 is a query list [   ]
