@@ -11,6 +11,8 @@ from functools import reduce
 import os
 import json
 from operator import itemgetter
+from ektelo.algorithm.privBayes import privBayesSelect
+from ektelo.matrix import Identity
 
 def datavector(df, domain, flatten=True):
     """ return the database in vector-of-counts form """
@@ -166,8 +168,8 @@ class Match3(Mechanism):
     def measure(self,round2,from_r=True):
         print("round2,",round2)
         if from_r:
-            selected_queries=r_to_python(round2, list(self.column_order))
-        self.round2=selected_queries  #round2 is a query list[]
+            round2 = r_to_python(round2, list(self.column_order))
+        self.round2 = round2  #round2 is a query list[]
         print("ok round2,",round2)
         # round1 and round2 measurements will be weighted to have L2 sensitivity 1
         # perform round 2 measurments over compressed domain
@@ -235,6 +237,27 @@ class Match3(Mechanism):
         self.synthetic = engine.model.synthetic_data()
         self.synthetic = reverse_data(self.synthetic, self.supports)
 
+    def privbayes_query_selection(self,eps,seed):
+        domain=self.domain
+        print(domain)
+        config = ''
+        for a in list(self.data.columns):
+            values = [str(i) for i in range(domain[a])]
+            config += 'D ' + ' '.join(values) + ' \n'
+        config = config.encode('utf-8')
+        print(config)
+        values = np.ascontiguousarray(self.data.values.astype(np.int32))
+        ans = privBayesSelect.py_get_model(values, config, eps, 1.0, seed)
+        print("ans",ans)
+        ans = ans.decode('utf-8')[:-1]
+        print(ans)
+        projections = []
+        for m in ans.split('\n'):
+            p = [list(self.data.columns)[int(a)] for a in m.split(',')[::2]]
+            projections.append(tuple(p))
+        print(projections)
+        return projections
+        
 def default_params():
     """
     Return default parameters to run this program
@@ -284,11 +307,15 @@ if __name__ == '__main__':
         weight3 = 6.0
 
     mech = Match3(args.dataset, args.specs, args.domain, args.mapping,args.save, iters=iters, weight3=weight3, warmup=True)
-    mech.shrink_domain(args.epsilon,args.delta)
+    mech.shrink_domain(args.epsilon/2,args.delta)
+    round2 = mech.privbayes_query_selection(eps=args.epsilon/2,seed=0)
+    '''
     selected_queries = []
     a = open("queries.txt", 'r')
     for line in a.readlines():
         temp = tuple(line.strip('\n').split('_'))
         selected_queries.append(temp)
     round2=selected_queries    
-    mech.run(round2) #round2 is a query list [   ]
+    '''
+    mech.run(round2,from_r =False) #round2 is a query list [   ]
+    
