@@ -25,6 +25,7 @@ def transform_data(data, domain, supports):
     df = data.copy()
     newdom = {}
     for col in domain:
+        print(col)
         support = supports[col]
         size = support.sum()
         newdom[col] = int(size)
@@ -80,9 +81,21 @@ def moments_calibration(round1, round2, eps, delta):
     assert obj(sigma) - 1e-8 <= 0, 'not differentially private' # true eps <= requested eps
     return sigma
 
+def r_to_python(quries_r, columns_names):
+    selected_queries=[]
+    for marg in quries_r:
+        temp=tuple(marg.split(','))
+        marg_names=[]
+        for t in temp:
+            marg_names.append(columns_names[int(t)-1])
+        selected_queries.append(tuple(marg_names))
+    print(selected_queries)
+    return selected_queries
+
 class Match3(Mechanism):
 
-    def __init__(self, dataset, specs, domain, mapping, iters=1000, weight3=1.0, warmup=False):
+    def __init__(self, dataset, specs, domain, mapping, save="out.csv",iters=1000, weight3=1.0, warmup=False,from_r=True):
+        print(dataset.head())
         #domain = json.load(open("domain.json"))
         Mechanism.__init__(self, dataset, specs, domain, mapping)
         self.iters = iters
@@ -90,15 +103,20 @@ class Match3(Mechanism):
         self.warmup = warmup
         self.elimination_order = None
         self.mapping = mapping
-     #   self.measurements = measurements
-     #   self.supports = supports
-     #   self.sigma = sigma
-    
+        self.save=save
+#        if from_r:
+#            new_column_list=[]
+#            for attr in list(dataset.columns):
+#                new_column_list.append(attr.replace('.',' '))
+#            dataset.columns=new_column_list
+        
+
     def shrink_domain(self,epsilon, delta=2.2820610e-12):
-        self.round1=list(self.domain)
+        data=self.load_data(is_encoded=True)
+        print(data.head())
+        self.round1=list(self.column_order)
         self.epsilon=epsilon
         self.delta=delta
-        data=self.load_data(is_encoded=True)
         sigma = moments_calibration(1.0, 1.0, epsilon, delta)
         self.sigma = sigma 
         print('NOISE LEVEL:', sigma)
@@ -136,19 +154,22 @@ class Match3(Mechanism):
                 
             self.measurements.append( (I2, y2/wgt, 1.0/wgt, proj) )
         self.supports=supports
+        print("before transform data")
         data,new_domain=transform_data(data,self.domain,supports)
+        print("after transform data")
         self.domain=new_domain
         self.data=data
+        print("shrink ok")
         return data, new_domain
 
             
-    def measure(self,round2):
-        self.round2=round2  #round2 is a query list[]
- #       data = self.load_data(is_encoded = True)
-        #print(data.head())
+    def measure(self,round2,from_r=True):
+        print("round2,",round2)
+        if from_r:
+            selected_queries=r_to_python(round2, list(self.column_order))
+        self.round2=selected_queries  #round2 is a query list[]
+        print("ok round2,",round2)
         # round1 and round2 measurements will be weighted to have L2 sensitivity 1
-   #     print('NOISE LEVEL:', self.sigma)
-
         # perform round 2 measurments over compressed domain
         weights = np.ones(len(self.round2))
         weights /= np.linalg.norm(weights) # now has L2 norm = 1
@@ -197,7 +218,8 @@ class Match3(Mechanism):
             engine.marginals = engine.model.belief_propagation(theta)
 
         checkpt = self.save[:-4] + '-checkpt.csv'
-        for i in range(self.iters // 500):
+        
+        for i in range(int(self.iters) // 500):
             
             engine.infer(self.measurements, engine='MD', callback=cb)
 
@@ -261,7 +283,7 @@ if __name__ == '__main__':
         iters = 750 #7500
         weight3 = 6.0
 
-    mech = Match3(args.dataset, args.specs, args.domain, args.mapping, iters=iters, weight3=weight3, warmup=True)
+    mech = Match3(args.dataset, args.specs, args.domain, args.mapping,args.save, iters=iters, weight3=weight3, warmup=True)
     mech.shrink_domain(args.epsilon,args.delta)
     selected_queries = []
     a = open("queries.txt", 'r')
@@ -269,4 +291,4 @@ if __name__ == '__main__':
         temp = tuple(line.strip('\n').split('_'))
         selected_queries.append(temp)
     round2=selected_queries    
-    mech.run(round2, args.save) #round2 is a query list [   ]
+    mech.run(round2) #round2 is a query list [   ]
