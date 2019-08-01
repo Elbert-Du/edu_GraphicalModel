@@ -1,14 +1,13 @@
 library(sets)
 library(LaplacesDemon)
+library(rjson)
 setwd("GraphicalModel/edu_GraphicalModel")
-data = read.csv("competitor_pack/data/fire-data-2.csv", nrows = 100000)
+data = read.csv("competitor_pack/data/fire-data-2.csv", nrows = 100000, check.names = FALSE)
 #not DP, just using this for a test. user would specify domain normally.
-domain = list()
-for (i in 1:dim(data)[2]) {
-  domain[[names(data)[i]]] = c(unique(data[,i]))
-}
+mapping = fromJSON(file="competitor_pack/data/fire-data-specs-mapping.json")
+data = data[,c(names(data) %in% names(mapping))]
 
-epsilon = 1
+epsilon = 1/3
 delta = 1e-6
 sensitivity = 1
 max_domain_size = 100000
@@ -514,6 +513,7 @@ mechanismExponential$methods(
     quality <- true.val - max(true.val)
     likelihoods <- exp((.self$epsilon * quality) / (2 * sens))   # Problem that this zeroes out for quality differences > 800
     probs <- likelihoods/sum(likelihoods)
+    #print(names(true.val))
     release <- sample(names(true.val), size=.self$k, prob=probs) # Problem that this needs to use openssl randomness
     out <- list('release' = release)
     out <- postFun(out, ...)
@@ -625,37 +625,44 @@ getFuncArgs <- function(output, target.func) {
 }
 
 mutual_information_vector = function(data, x, type = "L1") {
-  mutual_informations = vector(mode = "numeric")
-  for (pair in x) {
-    mutual_informations = c(mutual_informations, mutual_information(data, pair, type))
-  }
+  vec_type = vector(mode = "numeric", length = 1)
+  mutual_informations = vapply(x, mutual_information, vec_type, data, type)
   names(mutual_informations) = x
+  #print(mutual_informations)
   return(mutual_informations)
 }
 
-mutual_information = function(data, pair, type = "L1") {
-  these_elements = strsplit(pair, ';')[[1]]
-  setA = as.set(strsplit(these_elements[1],',')[[1]])
-  setB = as.set(strsplit(these_elements[2],',')[[1]])
-  intersection = set_intersection(setA,setB)
-  setA = set_complement(intersection, setA)
-  setB = set_complement(intersection, setB)
-  a = as.vector(setA, mode = "integer")
-  b = as.vector(setB, mode = "integer")
-  #print(these_elements)
-  #print(a)
-  #print(b)
-  n = dim(data)[1]
-  if_independent = outer(as.vector(table(data[,a])), as.vector(table(data[,b])))/n^2
-  dim = c(length(table(data[,a])),length(table(data[,b])))
-  true_val = array(table(data[,c(a,b)])/n, dim = dim, dimnames = NULL)
-  if (type == "L1") {
-    return(sum(abs(if_independent-true_val)))
+mutual_information = function(pair, data, type = "L1") {
+  pair = as.character(pair)
+  #print(pair)
+  if (pair == "empty") {
+    return(0.2)
+  } else{
+    these_elements = strsplit(pair, ';')[[1]]
+    setA = as.set(strsplit(these_elements[1],',')[[1]])
+    setB = as.set(strsplit(these_elements[2],',')[[1]])
+    #intersection = set_intersection(setA,setB)
+    #setA = set_complement(intersection, setA)
+    #setB = set_complement(intersection, setB)
+    a = as.vector(setA, mode = "integer")
+    b = as.vector(setB, mode = "integer")
+    #int = as.vector(intersection, mode = "integer")
+    #print(these_elements)
+    #print(a)
+    #print(b)
+    n = dim(data)[1]
+    if_independent = outer(as.vector(table(data[,a])), as.vector(table(data[,b])))/n^2
+    dim = c(length(table(data[,a])),length(table(data[,b])))
+    true_val = array(table(data[,c(a,b)])/n, dim = dim, dimnames = NULL)
+    if (type == "L1") {
+      return(sum(abs(if_independent-true_val)))
+    }
+    
+    else if (type == "KL") {
+      return(KLD(if_independent,true_val)$sum.KLD.py.px)
+    }
   }
   
-  else if (type == "KL") {
-    return(KLD(if_independent,true_val)$sum.KLD.py.px)
-  }
 }
 
 
@@ -666,72 +673,141 @@ identity = function(a,...) {
   return(a)
 }
 
+get_domains = function(index, domain, att) {
+  return(length(domain[[att[index]]]))
+}
 
-select_queries = function(data, max_domain_size, sensitivity, domain, epsilon, delta) {
+
+select_queries = function(data, max_domain_size, domain, epsilon, delta, queries = NULL) {
   n = dim(data)[1]
   d = length(names(data))
-  Q = as.set(as.vector(1:d, mode = "character"))
+  att = names(data)
+  adj = list()
+  for (i in 1:d) {
+    adj[[as.character(i)]] = as.set(as.character(i))
+  }
+  type = "KL"
+  sensitivity = 2/n*log(n+1/2)+(n-1)/n*log((n+1)/(n-1))
+  Q = set_union(as.set(as.vector(1:d, mode = "character")), as.set(queries))
+  c = length(queries)
   list_of_pairs = vector(mode = "character")
   #utility = vector()
-  #start with just the mutual information of pairs of points
+  #start with just the points and cliques already in the graph
   for (i in 1:d) {
     for (j in 1:i){
-      if (j < i && as.double(length(table(data[i])))*as.double(length(table(data[j])))< max_domain_size) {
+      if (j < i && as.double(length(domain[[att[i]]]))*as.double(length(domain[[att[j]]]))< max_domain_size) {
         #utility = c(utility, compute_mutual_information(data, i, j))
         list_of_pairs = c(list_of_pairs, paste(as.character(c(i,j)), collapse = ";"))
       }
     }
   }
-  init = rep(c(1/d,delta^2),d)
-  params = matrix(init, nrow = d, ncol = 2, byrow = TRUE)
+  for (q1 in queries) {
+    for (q2 in Q) {
+      if (q1 != q2) {
+        c1 = as.numeric(strsplit(q1, ",")[[1]])
+        domain_size_1 = prod(sapply(c1, get_domains, domain, att))
+        elements_1 = as.set(c1)
+        c2 = as.numeric(strsplit(q2, ",")[[1]])
+        domain_size_2 = prod(sapply(c2, get_domains, domain, att))
+        elements_2 = as.set(c2)
+        if (domain_size_1*domain_size_2 < max_domain_size && set_is_empty(set_intersection(elements_1,elements_2))) {
+          new_pair = paste(as.character(c(q1, q2)), collapse = ";")
+          list_of_pairs = c(list_of_pairs, paste(new_pair))
+        }
+      }
+      
+    }
+  }
+  list_of_pairs = c(list_of_pairs, "empty")
+  set_of_pairs = as.set(list_of_pairs)
+  init = rep(c(epsilon/(2*(d-c)),delta^2),2*(d-c))
+  params = matrix(init, nrow = 2*(d-c), ncol = 2, byrow = TRUE)
   optimal_values = update_parameters(params = params, hold=0, eps = epsilon, del=delta)
   best_epsilon = optimal_values[1,1]
   best_delta = optimal_values[1,2]
-  
+  #print(list_of_pairs)
   #Now choose queries with exponential mechanism, we take pairs of cliques
   #cliques build up over time so we keep adding to the set that we're looking at
-  for (i in 1:d) {
+  for (i in 1:(2*(d-c))) {
     print(i)
-    #TO DO:Make this part work
     myMech = mechanismExponential()
     myMech$k = 1
     myMech$var.type = "character"
     myMech$n = n
-    myMech$epsilon = best_epsilon/2
+    myMech$epsilon = best_epsilon
     myMech$delta = best_delta
     myMech$bins = list_of_pairs
-    pair = myMech$evaluate(fun = mutual_information_vector, x = list_of_pairs, sens = sensitivity, postFun = identity, data = data, type = "L1")$release
+    pair = myMech$evaluate(fun = mutual_information_vector, x = list_of_pairs, sens = sensitivity, postFun = identity, data = data, type = type)$release
     print(pair)
-    S = as.set(strsplit(pair, ';')[[1]])
-    #Make sure each element of S is actually a single attribute
-    S = paste(as.character(S), collapse = ",")
-    S = as.set(strsplit(S, ',')[[1]])
+    print(mutual_information(pair, data, type = "KL"))
+    if (pair != "empty") {
+      list_of_pairs = list_of_pairs[list_of_pairs != pair]
+      S = as.set(strsplit(pair, ';')[[1]])
+      #Make sure each element of S is actually a single attribute
+      S = paste(as.character(S), collapse = ",")
+      S = as.set(strsplit(S, ',')[[1]])
     
-    u = mutual_information(data, pair, "KL") + rnorm(n=1, mean=0, sd = 2*d/(best_epsilon*n))
-    if (u > 4*d/(best_epsilon*n)) {
-      #remove all pairings that only use elements in pair
-      for (pairing in list_of_pairs) {
-        these_elements = as.set(strsplit(pairing, ';')[[1]])
-        if (set_is_subset(these_elements, S)) {
-          list_of_pairs = list_of_pairs[list_of_pairs != pairing]
+    #print(4*d/(best_epsilon*n))
+    
+    #u = mutual_information(data, pair, "KL") + rnorm(n=1, mean=0, sd = 2*d/(best_epsilon*n))
+      #If they all share a common neighbor then adding this pairing completes the clique so we want to only consider that
+      #for the mutual information gain (and thus probability) to be accurate.
+      for (j in S) {
+        adj[[j]] = set_union(adj[[j]], S)
+      }
+      for (j in S) {
+        for (pairing in list_of_pairs) {
+          these_elements = strsplit(pairing, ';')[[1]]
+          setA = as.set(strsplit(these_elements[1],',')[[1]])
+          setB = as.set(strsplit(these_elements[2],',')[[1]])
+          these_elements = set_union(setA, setB)
+          count = 0
+          #The above happens exactly when we're one edge off from a complete graph, so we can count how far off the degree of this
+          #subgraph is from being complete and we get rid of the pair iff we're off by 2
+          for (k in these_elements) {
+            this_length = length(set_intersection(adj[[j]], adj[[k]]))
+            count = count + length(these_elements) - this_length + 1
+          }
+          if (count == 2) {
+            list_of_pairs = list_of_pairs[list_of_pairs != pairing]
+          }
         }
       }
+      set_of_pairs = as.set(list_of_pairs)
+      #remove all pairings that only use elements in pair
+      #for (pairing in list_of_pairs) {
+        #these_elements = strsplit(pairing, ';')[[1]]
+        #setA = as.set(strsplit(these_elements[1],',')[[1]])
+        #setB = as.set(strsplit(these_elements[2],',')[[1]])
+        #these_elements = set_union(setA, setB)
+        #if (set_is_subset(these_elements, S)) {
+        #  list_of_pairs = list_of_pairs[list_of_pairs != pairing]
+        #}
+
+      #}
       new_clique = paste(as.character(S), collapse = ",")
+      #Add all pairs with the new set under the domain size bound into consideration
+      #We don't include pairs that intersect since those are redundant.
       for (clique in Q) {
         cliqueSet = as.set(strsplit(clique,',')[[1]])
-        index = as.vector(set_union(cliqueSet,S), mode = "integer")
+        indices = as.vector(set_union(cliqueSet,S), mode = "integer")
         #print(index)
         domain_size = 1
-        for (attribute in index) {
-          domain_size = domain_size * length(domain[[attribute]])
+        for (i in indices) {
+          domain_size = domain_size * length(domain[[att[i]]])
         }
         #print(domain_size)
-        if (!set_is_subset(cliqueSet, S) && domain_size < max_domain_size) {
+        if (set_is_empty(set_intersection(cliqueSet, S)) && domain_size < max_domain_size) {
           #print("chosen")
           new_pair = paste(as.character(c(new_clique, clique)),collapse = ";")
-          list_of_pairs = c(list_of_pairs, new_pair)
+          if (!set_contains_element(set_of_pairs, new_pair)) {
+            list_of_pairs = c(list_of_pairs, new_pair)
+            set_of_pairs = set_union(set_of_pairs, as.set(new_pair))
+          }
+          
         }
       }
+      print(list_of_pairs)
       Q = set_union(Q, as.set(new_clique))
       print(Q)
       
