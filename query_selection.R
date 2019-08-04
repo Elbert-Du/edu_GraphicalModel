@@ -720,7 +720,7 @@ select_queries = function(data, max_domain_size, domain, epsilon, delta, queries
   }
   list_of_pairs = c(list_of_pairs, "empty")
   set_of_pairs = as.set(list_of_pairs)
-  init = rep(c(epsilon/(2*(d-c)),delta^2),2*(d-c))
+  init = rep(c(epsilon/(2*(d-c)),0),2*(d-c))
   params = matrix(init, nrow = 2*(d-c), ncol = 2, byrow = TRUE)
   optimal_values = update_parameters(params = params, hold=0, eps = epsilon, del=delta)
   best_epsilon = optimal_values[1,1]
