@@ -688,7 +688,7 @@ select_queries = function(data, max_domain_size, domain, epsilon, delta, queries
   }
   type = "KL"
   sensitivity = 2/n*log(n+1/2)+(n-1)/n*log((n+1)/(n-1))
-  Q = set_union(as.set(as.vector(1:d, mode = "character")), as.set(queries))
+  Q = as.set(queries)
   c = length(queries)
   list_of_pairs = vector(mode = "character")
   #utility = vector()
