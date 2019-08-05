@@ -14,6 +14,11 @@ class Mechanism:
         be privacy-vetted.  All other code should not need to be checked with very much scrutiny
     """
     def __init__(self, dataset, specs, domain, mapping):
+        #donot delete this! 
+        for col in mapping:
+            for key in list(mapping[col]):
+                mapping[col][int(key)] = mapping[col][key]
+                del mapping[col][key]
         self.mapping= mapping
         self.dataset = dataset
         self.specs = specs
@@ -97,8 +102,8 @@ class Mechanism:
     def write_output(self):
 #        print(self.synthetic.df)
         self.synthetic.df = self.transform_domain(self.synthetic.df, self.mapping)
- #       print(self.synthetic.df)
- #       print(self.mapping)
+#        print("after transform domain:", self.synthetic.df)
+#        print(self.mapping)
         if self.save is not None:
             self.synthetic.df.to_csv(self.save, index=False)
         return self.synthetic
