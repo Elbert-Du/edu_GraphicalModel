@@ -677,6 +677,29 @@ get_domains = function(index, domain, att) {
   return(domain[[att[index]]])
 }
 
+add_pair = function(q1, q2, domain, att, max_domain_size) {
+  new_pair = ""
+  c1 = as.numeric(strsplit(q1, ",")[[1]])
+  #print(c1)
+  domain_size_1 = prod(sapply(c1, get_domains, domain, att))
+  elements_1 = as.set(c1)
+  c2 = as.numeric(strsplit(q2, ",")[[1]])
+  domain_size_2 = prod(sapply(c2, get_domains, domain, att))
+  elements_2 = as.set(c2)
+  if (domain_size_1*domain_size_2 < max_domain_size && set_is_empty(set_intersection(elements_1,elements_2))) {
+    new_pair = paste(as.character(c(q1, q2)), collapse = ";")
+    return(new_pair)
+  }
+  return(NULL)
+}
+
+pair_outer_loop = function(q1, Q, domain, att, max_domain_size) {
+  if (length(Q) == d && all(Q == as.character(c(1:d)))) {
+    Q = as.character(c(1:q1))
+  }
+  my_vec = sapply(Q, add_pair, q1, domain, att, max_domain_size)
+  return(my_vec)
+}
 
 select_queries = function(data, max_domain_size, domain, epsilon, delta, queries = NULL) {
   n = dim(data)[1]
@@ -691,36 +714,20 @@ select_queries = function(data, max_domain_size, domain, epsilon, delta, queries
   sensitivity = 2/n*log(n+1/2)+(n-1)/n*log((n+1)/(n-1))
   Q = as.set(queries)
   c = length(queries)
-  list_of_pairs = vector(mode = "character")
-  #utility = vector()
-  #start with just the points and cliques already in the graph
-  for (i in 1:d) {
-    for (j in 1:i){
-      if (j < i && as.double(domain[[att[i]]])*as.double(domain[[att[j]]])< max_domain_size) {
-        #utility = c(utility, compute_mutual_information(data, i, j))
-        list_of_pairs = c(list_of_pairs, paste(as.character(c(i,j)), collapse = ";"))
-      }
-    }
-  }
-  for (q1 in queries) {
-    for (q2 in Q) {
-      if (q1 != q2) {
-        c1 = as.numeric(strsplit(q1, ",")[[1]])
-        domain_size_1 = prod(sapply(c1, get_domains, domain, att))
-        elements_1 = as.set(c1)
-        c2 = as.numeric(strsplit(q2, ",")[[1]])
-        domain_size_2 = prod(sapply(c2, get_domains, domain, att))
-        elements_2 = as.set(c2)
-        if (domain_size_1*domain_size_2 < max_domain_size && set_is_empty(set_intersection(elements_1,elements_2))) {
-          new_pair = paste(as.character(c(q1, q2)), collapse = ";")
-          list_of_pairs = c(list_of_pairs, paste(new_pair))
-        }
-      }
-      
-    }
-  }
+  
+  list_of_pairs = unlist(sapply(as.character(c(1:d)), pair_outer_loop, as.character(c(1:d)),domain, att, max_domain_size))
+  list_of_pairs = list_of_pairs[list_of_pairs != ""]
+  
+  #Add the pairs we get from queries specified by users
+  these_pairs = unlist(sapply(as.character(c(1:d)), pair_outer_loop, queries, domain, att, max_domain_size))
+  these_pairs = these_pairs[these_pairs != ""]
+  
+  list_of_pairs = c(list_of_pairs, these_pairs)
+  
   list_of_pairs = c(list_of_pairs, "empty")
   set_of_pairs = as.set(list_of_pairs)
+  print(list_of_pairs)
+  
   init = rep(c(epsilon/(2*(d-c)),0),2*(d-c))
   params = matrix(init, nrow = 2*(d-c), ncol = 2, byrow = TRUE)
   optimal_values = update_parameters(params = params, hold=0, eps = epsilon, del=delta)
@@ -739,9 +746,9 @@ select_queries = function(data, max_domain_size, domain, epsilon, delta, queries
     myMech$delta = best_delta
     myMech$bins = list_of_pairs
     pair = myMech$evaluate(fun = mutual_information_vector, x = list_of_pairs, sens = sensitivity, postFun = identity, data = data, type = type)$release
-    #print(pair)
+    print(pair)
     total_mutual_information = total_mutual_information + mutual_information(pair, data, type = "KL")
-    #print(mutual_information(pair, data, type = "KL"))
+    print(mutual_information(pair, data, type = "KL"))
     if (pair != "empty") {
       list_of_pairs = list_of_pairs[list_of_pairs != pair]
       S = as.set(strsplit(pair, ';')[[1]])
@@ -775,7 +782,7 @@ select_queries = function(data, max_domain_size, domain, epsilon, delta, queries
           }
         }
       }
-      set_of_pairs = as.set(list_of_pairs)
+      
       #remove all pairings that only use elements in pair
       #for (pairing in list_of_pairs) {
         #these_elements = strsplit(pairing, ';')[[1]]
@@ -790,34 +797,21 @@ select_queries = function(data, max_domain_size, domain, epsilon, delta, queries
       new_clique = paste(as.character(S), collapse = ",")
       #Add all pairs with the new set under the domain size bound into consideration
       #We don't include pairs that intersect since those are redundant.
-      for (clique in Q) {
-        cliqueSet = as.set(strsplit(clique,',')[[1]])
-        indices = as.vector(set_union(cliqueSet,S), mode = "integer")
-        #print(index)
-        domain_size = 1
-        for (i in indices) {
-          domain_size = domain_size * domain[[att[i]]]
-        }
-        #print(domain_size)
-        if (set_is_empty(set_intersection(cliqueSet, S)) && domain_size < max_domain_size) {
-          #print("chosen")
-          new_pair = paste(as.character(c(new_clique, clique)),collapse = ";")
-          if (!set_contains_element(set_of_pairs, new_pair)) {
-            list_of_pairs = c(list_of_pairs, new_pair)
-            set_of_pairs = set_union(set_of_pairs, as.set(new_pair))
-          }
-          
-        }
-      }
+      new_pairs = unlist(sapply(Q, add_pair, new_clique, domain, att, max_domain_size))
+      new_pairs = new_pairs[new_pairs != ""]
+      new_pairs2 = unlist(sapply(as.character(c(1:d)), add_pair, new_clique, domain, att, max_domain_size))
+      new_pairs2 = new_pairs2[new_pairs2 != ""]
+      list_of_pairs = c(list_of_pairs, new_pairs, new_pairs2)
+      set_of_pairs = as.set(list_of_pairs)
       #print(list_of_pairs)
       Q = set_union(Q, as.set(new_clique))
       #print(Q)
-      
+      #print(list_of_pairs)
     }
   }
   #Add 1-way marginals on isolated points to the final set of queries
   for (adjacencies in adj) {
-    if (length(adjacencies == 1)) {
+    if (length(adjacencies) == 1) {
       Q = set_union(Q, adjacencies)
     } 
   }
