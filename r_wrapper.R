@@ -38,9 +38,9 @@ wrapper <- function(data, specs, domain, mapping, save, epsilon, delta, num_iter
     bound = log2(n)
   }
   mech <- make_gm$Match3(data, specs, domain, mapping, save, iters = num_iters, warmup = FALSE)
-  epsilon1 = 2/3*howSplit[1]/sum(howSplit)
+  epsilon1 = 2/3*howSplit[1]/sum(howSplit)*epsilon
   #In the future we will have to change epsilon2 to account for less privacy loss when user specifies queries
-  epsilon2 = 2/3*howSplit[2]/sum(howSplit)
+  epsilon2 = 2/3*howSplit[2]/sum(howSplit)*epsilon
   new_data <- mech$shrink_domain(epsilon1, delta, bound)  # ? epsilon/3 it should be /2?
   if (query_selection == "new"){
       compressed_data = new_data[1]
@@ -49,7 +49,7 @@ wrapper <- function(data, specs, domain, mapping, save, epsilon, delta, num_iter
       for(name in names(compressed_domain)){
           compressed_domain[[name]]=c(0,seq(as.numeric(compressed_domain[[name]])-1))
       }
-      Q = select_queries(data, n, sensitivity = 1, domain = compressed_domain, epsilon = epsilon/3, delta = delta)#change NAN in compressed_data
+      Q = select_queries(data, n, domain = compressed_domain, epsilon = epsilon/3, delta = delta)#change NAN in compressed_data
       queries = Q$Q
       MI = Q$MI
       from_r = TRUE

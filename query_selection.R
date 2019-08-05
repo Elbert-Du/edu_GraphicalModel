@@ -674,7 +674,7 @@ identity = function(a,...) {
 }
 
 get_domains = function(index, domain, att) {
-  return(length(domain[[att[index]]]))
+  return(domain[[att[index]]])
 }
 
 
@@ -696,7 +696,7 @@ select_queries = function(data, max_domain_size, domain, epsilon, delta, queries
   #start with just the points and cliques already in the graph
   for (i in 1:d) {
     for (j in 1:i){
-      if (j < i && as.double(length(domain[[att[i]]]))*as.double(length(domain[[att[j]]]))< max_domain_size) {
+      if (j < i && as.double(domain[[att[i]]])*as.double(domain[[att[j]]])< max_domain_size) {
         #utility = c(utility, compute_mutual_information(data, i, j))
         list_of_pairs = c(list_of_pairs, paste(as.character(c(i,j)), collapse = ";"))
       }
@@ -796,7 +796,7 @@ select_queries = function(data, max_domain_size, domain, epsilon, delta, queries
         #print(index)
         domain_size = 1
         for (i in indices) {
-          domain_size = domain_size * length(domain[[att[i]]])
+          domain_size = domain_size * domain[[att[i]]]
         }
         #print(domain_size)
         if (set_is_empty(set_intersection(cliqueSet, S)) && domain_size < max_domain_size) {
@@ -817,12 +817,13 @@ select_queries = function(data, max_domain_size, domain, epsilon, delta, queries
   }
   #Add 1-way marginals on isolated points to the final set of queries
   for (adjacencies in adj) {
-    if (length(element == 1)) {
-      Q = set_union(Q, element)
+    if (length(adjacencies == 1)) {
+      Q = set_union(Q, adjacencies)
     } 
   }
   output = list()
   output$Q = Q
   output$MI = total_mutual_information
+  print(output)
   return(output)
 }

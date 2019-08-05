@@ -120,19 +120,25 @@ class Match3(Mechanism):
         sigma1 = moments_calibration(1.0, epsilon, delta)
         self.sigma1 = sigma1 
         print('NOISE LEVEL ONE-WAY MARGINALS:', sigma1)
+        supports = {}
+        for i,col in enumerate(self.round1):
+            if self.domain[col] <= bound:
+                supports[col] = np.asarray([True for j in range(self.domain[col])])
+                del(self.round1[i])
         weights = np.ones(len(self.round1))
         weights /= np.linalg.norm(weights) # now has L2 norm = 1                                                                                                                                               
-        supports = {}
+
 
         self.measurements = []
+
+        
         for col, wgt in zip(self.round1, weights):
             ##########################                                                                                                                                                                          
             ### Noise-addition step ##                                                                                                                                                                          
             ##########################                                                                                                     
             #If the column has fewer possible values than the bound we just leave it be.
             #print(self.mapping[col])
-            if len(self.domain[col]) <= bound:
-                continue
+            
             
             proj = (col,)
             hist = np.asarray(data[col].value_counts())

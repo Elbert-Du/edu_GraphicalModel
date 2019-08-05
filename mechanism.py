@@ -14,37 +14,20 @@ class Mechanism:
         be privacy-vetted.  All other code should not need to be checked with very much scrutiny
     """
     def __init__(self, dataset, specs, domain, mapping):
-        for col in mapping:
-            for key in list(mapping[col]):
-                mapping[col][int(key)] = mapping[col][key]
-                del mapping[col][key]
         self.mapping= mapping
         self.dataset = dataset
         self.specs = specs
         domain_info = domain
-        del(domain_info["columns"])
-
         # check consistency for codebook information
         #for col in list(domain_info):
         #    if domain_info[col][-1] < self.specs[col]['maxval']:
         #        print('Codebook inconsistent for', col)
         #        del domain_info[col]
 
-        ## look at ground truth data to obtain possible values for state-dependent columns
-        #df = pd.read_csv(dataset)
-        #for col in ['SEA', 'METAREA', 'COUNTY', 'CITY', 'METAREAD']:
-        #    domain_info[col] = sorted(df[col].unique())
-        ## done using ground truth data 
-
         domain = { }
         for col in domain_info:
             domain[col] = len(domain_info[col])
 
-        #domain['INCWAGE_A'] = 52
-        #domain['INCWAGE_B'] = 8
-        #del domain['INCWAGE']
-        #domain['INCWAGE'] = 5002
-        #domain['VALUEH'] = 5003
         
         self.domain_info = domain_info 
         self.domain = domain
@@ -75,9 +58,7 @@ class Mechanism:
         self.column_order = df.columns
         if not is_encoded:
             for col in self.domain_info:
-                if self.specs[col]["type"] == "enum" or self.specs[col]["type"] == "integer":
-                    if self.specs[col]["type"] == "integer":
-                        df[col].astype('int32', errors = "ignore")
+                if self.specs[col]["type"] == "character":
                     df[col] = df[col].map(mapping)
 
                 else:
