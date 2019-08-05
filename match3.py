@@ -11,8 +11,8 @@ from functools import reduce
 import os
 import json
 from operator import itemgetter
-from ektelo.algorithm.privBayes import privBayesSelect
-from ektelo.matrix import Identity
+#from ektelo.algorithm.privBayes import privBayesSelect
+#from ektelo.matrix import Identity
 
 def datavector(df, domain, flatten=True):
     """ return the database in vector-of-counts form """
@@ -61,16 +61,14 @@ def reverse_data(data, supports):
     newdom = Domain.fromdict(newdom)
     return Dataset(df, newdom)
 
-def moments_calibration(round1, round2, eps, delta):
+def moments_calibration(sens, eps, delta):
     # round1: L2 sensitivity of round1 queries
     # round2: L2 sensitivity of round2 queries
     # works as long as eps >= 0.01; if larger, increase orders
     orders = range(2, 4096)
 
     def obj(sigma):
-        rdp1 = compute_rdp(1.0, sigma/round1, 1, orders)
-        rdp2 = compute_rdp(1.0, sigma/round2, 1, orders)
-        rdp = rdp1 + rdp2
+        rdp = compute_rdp(1.0, sigma/sens, 1, orders)
         privacy = get_privacy_spent(orders, rdp, target_delta=delta)
         return privacy[0] - eps + 1e-8
     low = 1.0
@@ -83,9 +81,9 @@ def moments_calibration(round1, round2, eps, delta):
     assert obj(sigma) - 1e-8 <= 0, 'not differentially private' # true eps <= requested eps
     return sigma
 
-def r_to_python(quries_r, columns_names):
+def r_to_python(queries_r, columns_names):
     selected_queries=[]
-    for marg in quries_r:
+    for marg in queries_r:
         temp=tuple(marg.split(','))
         marg_names=[]
         for t in temp:
@@ -96,7 +94,7 @@ def r_to_python(quries_r, columns_names):
 
 class Match3(Mechanism):
 
-    def __init__(self, dataset, specs, domain, mapping, save="out.csv",iters=1000, weight3=1.0, warmup=False,from_r=True):
+    def __init__(self, dataset, specs, domain, mapping, save="out.csv",iters=1000, weight3=1.0, warmup=False,from_r=True, is_encoded = False):
         print(dataset.head())
         #domain = json.load(open("domain.json"))
         Mechanism.__init__(self, dataset, specs, domain, mapping)
@@ -106,6 +104,7 @@ class Match3(Mechanism):
         self.elimination_order = None
         self.mapping = mapping
         self.save=save
+        self.is_encoded = is_encoded
 #        if from_r:
 #            new_column_list=[]
 #            for attr in list(dataset.columns):
@@ -113,15 +112,14 @@ class Match3(Mechanism):
 #            dataset.columns=new_column_list
         
 
-    def shrink_domain(self,epsilon, delta=2.2820610e-12):
-        data=self.load_data(is_encoded=True)
+    def shrink_domain(self,epsilon, delta=2.2820610e-12, bound = 0):
+        data=self.load_data(is_encoded=self.is_encoded)
         print(data.head())
         self.round1=list(self.column_order)
-        self.epsilon=epsilon
         self.delta=delta
-        sigma = moments_calibration(1.0, 1.0, epsilon, delta)
-        self.sigma = sigma 
-        print('NOISE LEVEL:', sigma)
+        sigma1 = moments_calibration(1.0, epsilon, delta)
+        self.sigma1 = sigma1 
+        print('NOISE LEVEL ONE-WAY MARGINALS:', sigma1)
         weights = np.ones(len(self.round1))
         weights /= np.linalg.norm(weights) # now has L2 norm = 1                                                                                                                                               
         supports = {}
@@ -130,17 +128,22 @@ class Match3(Mechanism):
         for col, wgt in zip(self.round1, weights):
             ##########################                                                                                                                                                                          
             ### Noise-addition step ##                                                                                                                                                                          
-            ##########################                                                                                                                                                                     
+            ##########################                                                                                                     
+            #If the column has fewer possible values than the bound we just leave it be.
+            #print(self.mapping[col])
+            if len(self.domain[col]) <= bound:
+                continue
+            
             proj = (col,)
             hist = np.asarray(data[col].value_counts())
             print(hist)
-            noise = sigma*np.random.randn(hist.size)
+            noise = sigma1*np.random.randn(hist.size)
             y = wgt*hist + noise
             
             #####################                                                                                                                                                                               
             ## Post-processing ##                                                                                                                                                                               
             #####################                                                                                                                                                                         
-            sup = y >= 3*sigma
+            sup = y >= 3*sigma1
             supports[col] = sup
             print(col, self.domain[col], sup.sum())
             #print(col, len(self.domain[col]), sup.sum())                                                                                                                                                  
@@ -165,7 +168,10 @@ class Match3(Mechanism):
         return data, new_domain
 
             
-    def measure(self,round2,from_r=True):
+    def measure(self,round2, epsilon, from_r=True):
+        sigma2 = moments_calibration(1.0, epsilon, self.delta)
+        self.sigma2 = sigma2
+        print('NOISE LEVEL FOR QUERIES:', sigma2)
         print("round2,",round2)
         if from_r:
             round2 = r_to_python(round2, list(self.column_order))
@@ -184,7 +190,7 @@ class Match3(Mechanism):
             hist = datavector(self.data[list(proj)], indices)
             Q = matrix.Identity(hist.size)
 
-            noise = self.sigma*np.random.randn(Q.shape[0])
+            noise = self.sigma2*np.random.randn(Q.shape[0])
             y = wgt*Q.dot(hist) + noise
             self.measurements.append( (Q, y/wgt, 1.0/wgt, proj) )
 
@@ -265,7 +271,7 @@ def default_params():
     :returns: a dictionary of default parameter settings for each command line argument
     """
     params = {}
-    params['dataset'] = pd.read_csv('competitor_pack/data/fire-data.csv')
+    params['dataset'] = pd.read_csv('competitor_pack/data/fire-data-2.csv', nrows = 10000)
     
     params['specs'] = json.load(open('competitor_pack/data/fire-data-specs.json'))
     params['epsilon'] = 1.0

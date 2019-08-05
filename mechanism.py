@@ -62,19 +62,22 @@ class Mechanism:
             new_df[i] = np.floor((element-this_min)/step_size)
         return(new_df)
 
-    def load_data(self, df = None, is_encoded = False):
+    def load_data(self, df = None, mapping = None, is_encoded = False):
         """ load the data and discretize the integer/float attributes """
         #Already discretized in domain.ipynb, but for consistency we map to 0:d-1 for d-1 possible values
         if df is None:
             df = self.dataset
+        if mapping is None:
+            mapping = self.mapping
+        for col in list(df):
+            if col not in mapping:
+                del(df[col])
         self.column_order = df.columns
         if not is_encoded:
             for col in self.domain_info:
                 if self.specs[col]["type"] == "enum" or self.specs[col]["type"] == "integer":
                     if self.specs[col]["type"] == "integer":
                         df[col].astype('int32', errors = "ignore")
-                    vals = self.domain_info[col]
-                    mapping = dict(zip(vals, range(len(vals))))
                     df[col] = df[col].map(mapping)
 
                 else:

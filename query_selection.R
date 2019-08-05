@@ -1,7 +1,7 @@
 library(sets)
 library(LaplacesDemon)
 library(rjson)
-setwd("GraphicalModel/edu_GraphicalModel")
+#setwd("GraphicalModel/edu_GraphicalModel")
 data = read.csv("competitor_pack/data/fire-data-2.csv", nrows = 100000, check.names = FALSE)
 #not DP, just using this for a test. user would specify domain normally.
 mapping = fromJSON(file="competitor_pack/data/fire-data-specs-mapping.json")
