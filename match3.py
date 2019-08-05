@@ -11,8 +11,8 @@ from functools import reduce
 import os
 import json
 from operator import itemgetter
-#from ektelo.algorithm.privBayes import privBayesSelect
-#from ektelo.matrix import Identity
+from ektelo.algorithm.privBayes import privBayesSelect
+from ektelo.matrix import Identity
 
 def datavector(df, domain, flatten=True):
     """ return the database in vector-of-counts form """
@@ -94,7 +94,7 @@ def r_to_python(queries_r, columns_names):
 
 class Match3(Mechanism):
 
-    def __init__(self, dataset, specs, domain, mapping, save="out.csv",iters=1000, weight3=1.0, warmup=False,from_r=True, is_encoded = False):
+    def __init__(self, dataset, specs, domain, mapping, delta,save="out.csv",iters=1000, weight3=1.0, warmup=False,from_r=True, is_encoded = False):
         print(dataset.head())
         #domain = json.load(open("domain.json"))
         Mechanism.__init__(self, dataset, specs, domain, mapping)
@@ -105,15 +105,17 @@ class Match3(Mechanism):
         self.mapping = mapping
         self.save=save
         self.is_encoded = is_encoded
-#        if from_r:
-#            new_column_list=[]
-#            for attr in list(dataset.columns):
-#                new_column_list.append(attr.replace('.',' '))
-#            dataset.columns=new_column_list
+        self.data=self.load_data(is_encoded=self.is_encoded)
+        self.delta=delta
+        self.measurements = []
+        self.supports = {}
+        for col in self.data.columns:
+            self.supports[col] = np.asarray([True for j in range(self.domain[col])])
+        print("sssssssssssssssssssssssssssssssssssssssssss:",self.supports)
         
-
     def shrink_domain(self,epsilon, delta=2.2820610e-12, bound = 0):
-        data=self.load_data(is_encoded=self.is_encoded)
+    #    data=self.load_data(is_encoded=self.is_encoded)
+        data=self.data
         print(data.head())
         self.round1=list(self.column_order)
         self.delta=delta
@@ -129,7 +131,7 @@ class Match3(Mechanism):
         weights /= np.linalg.norm(weights) # now has L2 norm = 1                                                                                                                                               
 
 
-        self.measurements = []
+#        self.measurements = []
 
         
         for col, wgt in zip(self.round1, weights):
@@ -248,6 +250,7 @@ class Match3(Mechanism):
 
         self.synthetic = engine.model.synthetic_data()
         self.synthetic = reverse_data(self.synthetic, self.supports)
+#        print("postprocess:",self.synthetic.df)
 
     def privbayes_query_selection(self,eps,seed):
         domain=self.domain
@@ -318,7 +321,7 @@ if __name__ == '__main__':
         iters = 750 #7500
         weight3 = 6.0
 
-    mech = Match3(args.dataset, args.specs, args.domain, args.mapping,args.save, iters=iters, weight3=weight3, warmup=True)
+    mech = Match3(args.dataset, args.specs, args.domain, args.mapping, args.delta, args.save, iters=iters, weight3=weight3, warmup=True)
     mech.shrink_domain(args.epsilon/2,args.delta)
     round2 = mech.privbayes_query_selection(eps=args.epsilon/2,seed=0)
     '''
