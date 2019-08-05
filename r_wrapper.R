@@ -20,12 +20,12 @@ path_to_mapping <- "competitor_pack/data/fire-data-specs-mapping.json"
 
 save <- "output.csv" #todo where to save?
 
-epslion = 1
+epsilon = 1
 delta = 1e-6
 
 
 #data = read.csv(path_to_data, nrows = 100000)
-data = pd$read_csv(path_to_data, nrows = 10000)
+data = pd$read_csv(path_to_data, nrows = 100000)
 specs = fromJSON(file=path_to_specs)
 domain = fromJSON(file=path_to_domain)
 mapping = fromJSON(file=path_to_mapping)
