@@ -680,6 +680,7 @@ get_domains = function(index, domain, att) {
 
 select_queries = function(data, max_domain_size, domain, epsilon, delta, queries = NULL) {
   n = dim(data)[1]
+  total_mutual_information = 0
   d = length(names(data))
   att = names(data)
   adj = list()
@@ -729,7 +730,7 @@ select_queries = function(data, max_domain_size, domain, epsilon, delta, queries
   #Now choose queries with exponential mechanism, we take pairs of cliques
   #cliques build up over time so we keep adding to the set that we're looking at
   for (i in 1:(2*(d-c))) {
-    print(i)
+    #print(i)
     myMech = mechanismExponential()
     myMech$k = 1
     myMech$var.type = "character"
@@ -738,8 +739,9 @@ select_queries = function(data, max_domain_size, domain, epsilon, delta, queries
     myMech$delta = best_delta
     myMech$bins = list_of_pairs
     pair = myMech$evaluate(fun = mutual_information_vector, x = list_of_pairs, sens = sensitivity, postFun = identity, data = data, type = type)$release
-    print(pair)
-    print(mutual_information(pair, data, type = "KL"))
+    #print(pair)
+    total_mutual_information = total_mutual_information + mutual_information(pair, data, type = "KL")
+    #print(mutual_information(pair, data, type = "KL"))
     if (pair != "empty") {
       list_of_pairs = list_of_pairs[list_of_pairs != pair]
       S = as.set(strsplit(pair, ';')[[1]])
@@ -807,11 +809,20 @@ select_queries = function(data, max_domain_size, domain, epsilon, delta, queries
           
         }
       }
-      print(list_of_pairs)
+      #print(list_of_pairs)
       Q = set_union(Q, as.set(new_clique))
-      print(Q)
+      #print(Q)
       
     }
   }
-  return(Q)
+  #Add 1-way marginals on isolated points to the final set of queries
+  for (adjacencies in adj) {
+    if (length(element == 1)) {
+      Q = set_union(Q, element)
+    } 
+  }
+  output = list()
+  output$Q = Q
+  output$MI = total_mutual_information
+  return(output)
 }
