@@ -2,15 +2,15 @@ library(sets)
 library(LaplacesDemon)
 library(rjson)
 #setwd("GraphicalModel/edu_GraphicalModel")
-data = read.csv("competitor_pack/data/fire-data-2.csv", nrows = 100000, check.names = FALSE)
+#data = read.csv("competitor_pack/data/fire-data-2.csv", nrows = 100000, check.names = FALSE)
 #not DP, just using this for a test. user would specify domain normally.
-mapping = fromJSON(file="competitor_pack/data/fire-data-specs-mapping.json")
-data = data[,c(names(data) %in% names(mapping))]
+#mapping = fromJSON(file="competitor_pack/data/fire-data-specs-mapping.json")
+#data = data[,c(names(data) %in% names(mapping))]
 
-epsilon = 1/3
-delta = 1e-6
-sensitivity = 1
-max_domain_size = 100000
+#epsilon = 1/3
+#delta = 1e-6
+#sensitivity = 1
+#max_domain_size = 100000
 
 
 isDP <- function(params, d_g, e_g, err){
@@ -694,6 +694,7 @@ add_pair = function(q1, q2, domain, att, max_domain_size) {
 }
 
 pair_outer_loop = function(q1, Q, domain, att, max_domain_size) {
+  d = length(domain)
   if (length(Q) == d && all(Q == as.character(c(1:d)))) {
     Q = as.character(c(1:q1))
   }
@@ -706,6 +707,9 @@ select_queries = function(data, max_domain_size, domain, epsilon, delta, queries
   total_mutual_information = 0
   d = length(names(data))
   att = names(data)
+  for (a in att) {
+    domain[[a]] = length(domain[[a]])
+  }
   adj = list()
   for (i in 1:d) {
     adj[[as.character(i)]] = as.set(as.character(i))
