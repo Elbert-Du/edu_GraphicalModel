@@ -708,7 +708,9 @@ select_queries = function(data, max_domain_size, domain, epsilon, delta, queries
   d = length(names(data))
   att = names(data)
   for (a in att) {
-    domain[[a]] = length(domain[[a]])
+    if(length(domain[[a]]) > 1) {
+      domain[[a]] = length(domain[[a]])
+    }
   }
   adj = list()
   for (i in 1:d) {
