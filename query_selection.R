@@ -634,9 +634,11 @@ mutual_information_vector = function(data, x, type = "L1") {
 
 mutual_information = function(pair, data, type = "L1") {
   pair = as.character(pair)
+  d = dim(data)[2]
+  n = dim(data)[1]
   #print(pair)
   if (pair == "empty") {
-    return(0.2)
+    return(100*d^2/n)
   } else{
     these_elements = strsplit(pair, ';')[[1]]
     setA = as.set(strsplit(these_elements[1],',')[[1]])
@@ -650,7 +652,6 @@ mutual_information = function(pair, data, type = "L1") {
     #print(these_elements)
     #print(a)
     #print(b)
-    n = dim(data)[1]
     if_independent = outer(as.vector(table(data[,a])), as.vector(table(data[,b])))/n^2
     dim = c(length(table(data[,a])),length(table(data[,b])))
     true_val = array(table(data[,c(a,b)])/n, dim = dim, dimnames = NULL)
@@ -702,7 +703,7 @@ pair_outer_loop = function(q1, Q, domain, att, max_domain_size) {
   return(my_vec)
 }
 
-select_queries = function(data, max_domain_size, domain, epsilon, delta, queries = NULL) {
+select_queries = function(data, max_domain_size, domain, epsilon, delta, queries = NULL, type = "KL") {
   n = dim(data)[1]
   total_mutual_information = 0
   d = length(names(data))
@@ -716,7 +717,6 @@ select_queries = function(data, max_domain_size, domain, epsilon, delta, queries
   for (i in 1:d) {
     adj[[as.character(i)]] = as.set(as.character(i))
   }
-  type = "KL"
   sensitivity = 2/n*log(n+1/2)+(n-1)/n*log((n+1)/(n-1))
   Q = as.set(queries)
   c = length(queries)
@@ -731,7 +731,6 @@ select_queries = function(data, max_domain_size, domain, epsilon, delta, queries
   list_of_pairs = c(list_of_pairs, these_pairs)
   
   list_of_pairs = c(list_of_pairs, "empty")
-  set_of_pairs = as.set(list_of_pairs)
   print(list_of_pairs)
   
   init = rep(c(epsilon/(2*(d-c)),0),2*(d-c))
@@ -753,15 +752,17 @@ select_queries = function(data, max_domain_size, domain, epsilon, delta, queries
     myMech$bins = list_of_pairs
     pair = myMech$evaluate(fun = mutual_information_vector, x = list_of_pairs, sens = sensitivity, postFun = identity, data = data, type = type)$release
     print(pair)
-    total_mutual_information = total_mutual_information + mutual_information(pair, data, type = "KL")
-    print(mutual_information(pair, data, type = "KL"))
+    this_MI = mutual_information(pair, data, type = "KL")
+    print(this_MI)
+    print(mutual_information(pair, data, type = "L1"))
     if (pair != "empty") {
+      total_mutual_information = total_mutual_information + this_MI
       list_of_pairs = list_of_pairs[list_of_pairs != pair]
       S = as.set(strsplit(pair, ';')[[1]])
       #Make sure each element of S is actually a single attribute
       S = paste(as.character(S), collapse = ",")
       S = as.set(strsplit(S, ',')[[1]])
-    
+      
     #print(4*d/(best_epsilon*n))
     
     #u = mutual_information(data, pair, "KL") + rnorm(n=1, mean=0, sd = 2*d/(best_epsilon*n))
@@ -777,15 +778,21 @@ select_queries = function(data, max_domain_size, domain, epsilon, delta, queries
           setB = as.set(strsplit(these_elements[2],',')[[1]])
           these_elements = set_union(setA, setB)
           count = 0
+          if (set_is_subset(these_elements, S)) {
+            list_of_pairs = list_of_pairs[list_of_pairs != pairing]
+          } else if (set_is_subset(these_elements, set_complement(as.set(j),adj[[j]]))) {
+            
+              for (k in these_elements) {
+                this_length = length(set_intersection(set_intersection(adj[[j]], adj[[k]]), these_elements))
+                count = count + length(these_elements) - this_length
+              }
+              if (count == 2) {
+                list_of_pairs = list_of_pairs[list_of_pairs != pairing]
+              }
+            }
+          
           #The above happens exactly when we're one edge off from a complete graph, so we can count how far off the degree of this
           #subgraph is from being complete and we get rid of the pair iff we're off by 2
-          for (k in these_elements) {
-            this_length = length(set_intersection(adj[[j]], adj[[k]]))
-            count = count + length(these_elements) - this_length + 1
-          }
-          if (count == 2) {
-            list_of_pairs = list_of_pairs[list_of_pairs != pairing]
-          }
         }
       }
       
@@ -808,7 +815,6 @@ select_queries = function(data, max_domain_size, domain, epsilon, delta, queries
       new_pairs2 = unlist(sapply(as.character(c(1:d)), add_pair, new_clique, domain, att, max_domain_size))
       new_pairs2 = new_pairs2[new_pairs2 != ""]
       list_of_pairs = c(list_of_pairs, new_pairs, new_pairs2)
-      set_of_pairs = as.set(list_of_pairs)
       #print(list_of_pairs)
       Q = set_union(Q, as.set(new_clique))
       #print(Q)
