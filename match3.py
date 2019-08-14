@@ -11,8 +11,8 @@ from functools import reduce
 import os
 import json
 from operator import itemgetter
-from ektelo.algorithm.privBayes import privBayesSelect
-from ektelo.matrix import Identity
+#from ektelo.algorithm.privBayes import privBayesSelect
+#from ektelo.matrix import Identity
 
 def datavector(df, domain, flatten=True):
     """ return the database in vector-of-counts form """
@@ -61,14 +61,16 @@ def reverse_data(data, supports):
     newdom = Domain.fromdict(newdom)
     return Dataset(df, newdom)
 
-def moments_calibration(sens, eps, delta):
+def moments_calibration(sens1, sens2, eps, delta):
     # round1: L2 sensitivity of round1 queries
     # round2: L2 sensitivity of round2 queries
     # works as long as eps >= 0.01; if larger, increase orders
     orders = range(2, 4096)
 
     def obj(sigma):
-        rdp = compute_rdp(1.0, sigma/sens, 1, orders)
+        rdp1 = compute_rdp(1.0, sigma/sens1, 1, orders)
+        rdp2 = compute_rdp(1.0, sigma/sens2, 1, orders)
+        rdp = rdp1+rdp2
         privacy = get_privacy_spent(orders, rdp, target_delta=delta)
         return privacy[0] - eps + 1e-8
     low = 1.0
@@ -119,9 +121,9 @@ class Match3(Mechanism):
         print(data.head())
         self.round1=list(self.column_order)
         self.delta=delta
-        sigma1 = moments_calibration(1.0, epsilon, delta)
-        self.sigma1 = sigma1 
-        print('NOISE LEVEL ONE-WAY MARGINALS:', sigma1)
+        sigma = moments_calibration(1.0, 1.0, epsilon, delta)
+        self.sigma = sigma
+        print('NOISE LEVEL:', sigma)
         supports = {}
         for i,col in enumerate(self.round1):
             if self.domain[col] <= bound:
@@ -145,13 +147,13 @@ class Match3(Mechanism):
             proj = (col,)
             hist = np.asarray(data[col].value_counts())
             print(hist)
-            noise = sigma1*np.random.randn(hist.size)
+            noise = sigma*np.random.randn(hist.size)
             y = wgt*hist + noise
             
             #####################                                                                                                                                                                               
             ## Post-processing ##                                                                                                                                                                               
             #####################                                                                                                                                                                         
-            sup = y >= 3*sigma1
+            sup = y >= 3*sigma
             supports[col] = sup
             print(col, self.domain[col], sup.sum())
             #print(col, len(self.domain[col]), sup.sum())                                                                                                                                                  
@@ -176,10 +178,7 @@ class Match3(Mechanism):
         return data, new_domain
 
             
-    def measure(self,round2, epsilon, from_r=True):
-        sigma2 = moments_calibration(1.0, epsilon, self.delta)
-        self.sigma2 = sigma2
-        print('NOISE LEVEL FOR QUERIES:', sigma2)
+    def measure(self,round2, from_r=True):
         print("round2,",round2)
         if from_r:
             round2 = r_to_python(round2, list(self.column_order))
@@ -198,7 +197,7 @@ class Match3(Mechanism):
             hist = datavector(self.data[list(proj)], indices)
             Q = matrix.Identity(hist.size)
 
-            noise = self.sigma2*np.random.randn(Q.shape[0])
+            noise = self.sigma*np.random.randn(Q.shape[0])
             y = wgt*Q.dot(hist) + noise
             self.measurements.append( (Q, y/wgt, 1.0/wgt, proj) )
 

@@ -705,7 +705,7 @@ pair_outer_loop = function(q1, Q, domain, att, max_domain_size) {
 
 select_queries = function(data, max_domain_size, domain, epsilon, delta, queries = NULL, type = "KL") {
   n = dim(data)[1]
-  total_mutual_information = 0
+  #total_mutual_information = 0
   d = length(names(data))
   att = names(data)
   for (a in att) {
@@ -713,14 +713,16 @@ select_queries = function(data, max_domain_size, domain, epsilon, delta, queries
       domain[[a]] = length(domain[[a]])
     }
   }
+  #adjacency list which will be useful later
   adj = list()
   for (i in 1:d) {
     adj[[as.character(i)]] = as.set(as.character(i))
   }
+  #sensitivity of mutual information according to Privbayes paper
   sensitivity = 2/n*log(n+1/2)+(n-1)/n*log((n+1)/(n-1))
   Q = as.set(queries)
   c = length(queries)
-  
+  #start by adding all pairs of attributes under the domain size
   list_of_pairs = unlist(sapply(as.character(c(1:d)), pair_outer_loop, as.character(c(1:d)),domain, att, max_domain_size))
   list_of_pairs = list_of_pairs[list_of_pairs != ""]
   
@@ -733,6 +735,7 @@ select_queries = function(data, max_domain_size, domain, epsilon, delta, queries
   list_of_pairs = c(list_of_pairs, "empty")
   print(list_of_pairs)
   
+  #get optimal splitting of privacy budget, each exponential mechanism will be (epsilon,0)
   init = rep(c(epsilon/(2*(d-c)),0),2*(d-c))
   params = matrix(init, nrow = 2*(d-c), ncol = 2, byrow = TRUE)
   optimal_values = update_parameters(params = params, hold=0, eps = epsilon, del=delta)
@@ -750,13 +753,14 @@ select_queries = function(data, max_domain_size, domain, epsilon, delta, queries
     myMech$epsilon = best_epsilon
     myMech$delta = best_delta
     myMech$bins = list_of_pairs
+    #set up Exponential mechanism and use it to choose a pair (or "empty" if all the pairs have low mutual information)
     pair = myMech$evaluate(fun = mutual_information_vector, x = list_of_pairs, sens = sensitivity, postFun = identity, data = data, type = type)$release
     print(pair)
     this_MI = mutual_information(pair, data, type = "KL")
     print(this_MI)
     print(mutual_information(pair, data, type = "L1"))
     if (pair != "empty") {
-      total_mutual_information = total_mutual_information + this_MI
+      #total_mutual_information = total_mutual_information + this_MI
       list_of_pairs = list_of_pairs[list_of_pairs != pair]
       S = as.set(strsplit(pair, ';')[[1]])
       #Make sure each element of S is actually a single attribute
@@ -768,6 +772,8 @@ select_queries = function(data, max_domain_size, domain, epsilon, delta, queries
     #u = mutual_information(data, pair, "KL") + rnorm(n=1, mean=0, sd = 2*d/(best_epsilon*n))
       #If they all share a common neighbor then adding this pairing completes the clique so we want to only consider that
       #for the mutual information gain (and thus probability) to be accurate.
+      #This condition happens exactly when we're one edge off from a complete graph, so we can count how far off the degree of this
+      #subgraph is from being complete and we get rid of the pair iff we're off by 2
       for (j in S) {
         adj[[j]] = set_union(adj[[j]], S)
       }
@@ -791,8 +797,7 @@ select_queries = function(data, max_domain_size, domain, epsilon, delta, queries
               }
             }
           
-          #The above happens exactly when we're one edge off from a complete graph, so we can count how far off the degree of this
-          #subgraph is from being complete and we get rid of the pair iff we're off by 2
+          
         }
       }
       
@@ -827,9 +832,9 @@ select_queries = function(data, max_domain_size, domain, epsilon, delta, queries
       Q = set_union(Q, adjacencies)
     } 
   }
-  output = list()
-  output$Q = Q
-  output$MI = total_mutual_information
-  print(output)
-  return(output)
+  #output = list()
+  #output$Q = Q
+  #output$MI = total_mutual_information
+  #print(output)
+  return(Q)
 }
