@@ -11,7 +11,7 @@ from functools import reduce
 import os
 import json
 from operator import itemgetter
-#from ektelo.algorithm.privBayes import privBayesSelect
+from privBayes import privBayesSelect
 #from ektelo.matrix import Identity
 
 def datavector(df, domain, flatten=True):
@@ -108,6 +108,7 @@ class Match3(Mechanism):
         self.save=save
         self.is_encoded = is_encoded
         self.data=self.load_data(is_encoded=self.is_encoded)
+        print(self.data)
         self.delta=delta
         self.measurements = []
         self.supports = {}
@@ -260,7 +261,8 @@ class Match3(Mechanism):
             config += 'D ' + ' '.join(values) + ' \n'
         config = config.encode('utf-8')
         print(config)
-        values = np.ascontiguousarray(self.data.values.astype(np.int32))
+        print( self.data.values )
+        values = np.ascontiguousarray(self.data.values.astype(np.int32))     
         ans = privBayesSelect.py_get_model(values, config, eps, 1.0, seed)
         print("ans",ans)
         ans = ans.decode('utf-8')[:-1]
