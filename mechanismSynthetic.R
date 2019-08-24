@@ -104,10 +104,10 @@ mechanismSynthetic$methods(
   })
 
 mechanismSynthetic$methods(
-                       selectQueries = function(data, query_selection) {
+                       selectQueries = function(data, query_selection, usefullness,sigma) {
                            if (query_selection == "new"){
                                
-                               queries = select_queries(data, .self$n, domain = .self$n.bins, epsilon = .self$epsilon2, delta = .self$delta)#change NAN in compressed_data
+                               queries = select_queries(data, sigma, domain = .self$bins, usefullness,  epsilon = .self$epsilon2, delta = .self$delta)#change NAN in compressed_data
                            }
                            else if(query_selection == "privbayes"){
                                queries = .self$mech$privbayes_query_selection(.self$epsilon/2, seed=0)#change seed when run experiments
@@ -137,7 +137,7 @@ myMech$initMech(data,myMech$save)
 myMech$epsilon = 1
 myMech$epsilon1 = 2/3
 myMech$epsilon2 = 1/3
-myMech$usefulness = 2
+myMech$usefulness = 1
 myMech$query_selection = "new"
 if (myMech$n > 100000/myMech$epsilon1) {
     compressed_data = myMech$shrinkDomain(data)
@@ -147,7 +147,7 @@ if (myMech$n > 100000/myMech$epsilon1) {
     myMech$mech$sigma = sigma
 }
 print("df")
-queries = myMech$selectQueries(data, myMech$query_selection) #
+queries = myMech$selectQueries(data, myMech$query_selection, myMech$usefulness, myMech$mech$sigma) #
 
 
 measurements = myMech$release(queries,myMech$query_selection)

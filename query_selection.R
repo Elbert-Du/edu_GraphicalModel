@@ -703,7 +703,7 @@ pair_outer_loop = function(q1, Q, domain, att, max_domain_size) {
   return(my_vec)
 }
 
-select_queries = function(data, max_domain_size, domain, epsilon, delta, queries = NULL, type = "KL") {
+select_queries = function(data, sigma, domain, usefullness , epsilon, delta, queries = NULL, type = "KL") {
   n = dim(data)[1]
   #total_mutual_information = 0
   d = length(names(data))
@@ -713,6 +713,8 @@ select_queries = function(data, max_domain_size, domain, epsilon, delta, queries
       domain[[a]] = length(domain[[a]])
     }
   }
+  #compute the domain size bound for marginals queries in measuremnt step
+  max_domain_size = n /(usefullness*sigma)
   #adjacency list which will be useful later
   adj = list()
   for (i in 1:d) {
