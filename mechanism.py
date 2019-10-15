@@ -3,37 +3,29 @@ import pandas as pd
 import json
 from scipy.stats import norm
 import pickle
-#from mbi import Dataset, Domain
 
 class Mechanism:
     """ This class is a template for a mechanism with all the boilerplate code
         already implemented.  subclasses should implement three functions:
             setup, measure, and postprocess
-
         measure is the only function that is allowed to look at the data, and it must
         be privacy-vetted.  All other code should not need to be checked with very much scrutiny
     """
     def __init__(self, dataset, specs, domain, mapping):
-        #donot delete this! 
         for col in mapping:
             for key in list(mapping[col]):
                 mapping[col][int(key)] = mapping[col][key]
                 del mapping[col][key]
+                
         self.mapping= mapping
         self.dataset = dataset
         self.specs = specs
         domain_info = domain
-        # check consistency for codebook information
-        #for col in list(domain_info):
-        #    if domain_info[col][-1] < self.specs[col]['maxval']:
-        #        print('Codebook inconsistent for', col)
-        #        del domain_info[col]
 
         domain = { }
         for col in domain_info:
             domain[col] = len(domain_info[col])
-
-        
+  
         self.domain_info = domain_info 
         self.domain = domain
 
@@ -50,28 +42,27 @@ class Mechanism:
             new_df[i] = np.floor((element-this_min)/step_size)
         return(new_df)
 
-    def load_data(self, df = None, mapping = None, is_encoded = False):
-        """ load the data and discretize the integer/float attributes """
-        #Already discretized in domain.ipynb, but for consistency we map to 0:d-1 for d-1 possible values
+    def load_data(self, df = None, is_encoded = False):
+        """ load the data 
+        discretize the integer/float attributes, if data is not encoded """
+        
         if df is None:
             df = self.dataset
-        if mapping is None:
-            mapping = self.mapping
+            
         for col in list(df):
-            if col not in mapping:
+            if col not in self.mapping:
                 del(df[col])
         self.column_order = df.columns
         if not is_encoded:
             for col in self.domain_info:
                 if self.specs[col]["type"] == "character":
+                    df[col].astype('int32', errors="ignore")
+                    vals=self.domain_info[col]
+                    mapping=dict(zip(vals, range(len(vals))))
                     df[col] = df[col].map(mapping)
 
                 else:
                     df[col] = self.float_map(df, col)
-
-        #print(df.head())
-    
-
         return df
 
 
@@ -89,10 +80,9 @@ class Mechanism:
         """
 
     def transform_domain(self, df, mapping):
-        """ convert the synthetic discrete data back to the original domain
+        """ convert the synthetic discrete data back to the original domain in domain file
             and add any missing columns with a default value """
         for col in df:
-            #print(mapping[col])
             if col in mapping:
                 df[col] = df[col].map(mapping[col])
                 
@@ -100,15 +90,14 @@ class Mechanism:
 
 
     def write_output(self):
-#        print(self.synthetic.df)
+        """write synthetic data to output file"""
+        # running tests should use the encoded data, so please comment this line of code
         self.synthetic.df = self.transform_domain(self.synthetic.df, self.mapping)
-#        print("after transform domain:", self.synthetic.df)
-#        print(self.mapping)
-        if self.save is not None:
-            self.synthetic.df.to_csv(self.save, index=False)
+        self.synthetic.df.to_csv(self.save, index=False)
         return self.synthetic
     
 
+'''
     def run(self, round2, from_r =False):
         """ Run the mechanism at the given privacy level and return the synthetic data
 
@@ -124,15 +113,6 @@ class Mechanism:
         self.measure(round2,from_r =False)
         self.postprocess()
         self.synthetic.df = self.transform_domain(self.synthetic.df, self.mapping)
-        if self.save is not None:
-            self.synthetic.df.to_csv(self.save, index=False)
+        self.synthetic.df.to_csv(self.save, index=False)
         return self.synthetic
-
-if __name__ == '__main__':
-    from IPython import embed
-    mech = Mechanism()
-    df = mech.load_data().df
-    mech.synthetic = df
-    mech.transform_domain()
-    df2 = mech.synthetic
-    #embed()
+'''

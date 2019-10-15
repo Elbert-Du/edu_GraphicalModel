@@ -12,7 +12,7 @@ import os
 import json
 from operator import itemgetter
 from privBayes import privBayesSelect
-#from ektelo.matrix import Identity
+
 
 def datavector(df, domain, flatten=True):
     """ return the database in vector-of-counts form """
@@ -24,6 +24,7 @@ def datavector(df, domain, flatten=True):
     return ans.flatten() if flatten else ans
 
 def transform_data(data, domain, supports):
+    #trancate data to have shrinked domain
     df = data.copy()
     newdom = {}
     for col in domain:
@@ -45,6 +46,7 @@ def transform_data(data, domain, supports):
     return (df, newdom)
 
 def reverse_data(data, supports):
+    #reverse data to have original domain
     df = data.df.copy()
     newdom = {}
     for col in data.domain:
@@ -65,12 +67,15 @@ def moments_calibration(sens1, sens2, eps, delta):
     # round1: L2 sensitivity of round1 queries
     # round2: L2 sensitivity of round2 queries
     # works as long as eps >= 0.01; if larger, increase orders
+    # if we do not shrink domain, we will not measure round 1 queries, so set round1's sensitivity very small and not compute its sigma
     orders = range(2, 4096)
 
     def obj(sigma):
         rdp1 = compute_rdp(1.0, sigma/sens1, 1, orders)
         rdp2 = compute_rdp(1.0, sigma/sens2, 1, orders)
-        rdp = rdp1+rdp2
+        rdp = rdp1+rdp2  
+        if(sens1<=0.000000001):
+            rdp = rdp2 
         privacy = get_privacy_spent(orders, rdp, target_delta=delta)
         return privacy[0] - eps + 1e-8
     low = 1.0
@@ -83,7 +88,25 @@ def moments_calibration(sens1, sens2, eps, delta):
     assert obj(sigma) - 1e-8 <= 0, 'not differentially private' # true eps <= requested eps
     return sigma
 
+def prior_err(variance, q_list, domain):
+    #conpute confidence interval of selected queries
+    m_list=[]
+    for q in q_list:
+        m=np.prod([domain[a] for a in q])
+        m_list.append(m)
+    def find(value, m):
+        c=np.sqrt(2/np.pi)*value*np.exp(-m**2/(2*(value**2)))
+        return c-0.05
+    workload_confidence={}
+    for i,m in enumerate(m_list):
+        value=optimize.bisect(find, 1, m, args=(m))
+        intervals=m*np.sqrt(variance)/value
+        workload_confidence[str(q_list[i])]=intervals
+    return workload_confidence
+    
+
 def r_to_python(queries_r, columns_names):
+    #only for new query selection method. just to change the format of query list
     selected_queries=[]
     for marg in queries_r:
         temp=tuple(marg.split(','))
@@ -91,35 +114,27 @@ def r_to_python(queries_r, columns_names):
         for t in temp:
             marg_names.append(columns_names[int(t)-1])
         selected_queries.append(tuple(marg_names))
-    print(selected_queries)
     return selected_queries
 
 class Match3(Mechanism):
-
-    def __init__(self, dataset, specs, domain, mapping, delta,save="out.csv",iters=1000, weight3=1.0, warmup=False,from_r=True, is_encoded = False):
-        print(dataset.head())
-        #domain = json.load(open("domain.json"))
+    #Please set iters as 10000 
+    def __init__(self, dataset, specs, domain, mapping, delta,save="out.csv",iters=10000, warmup=False, is_encoded = True):
         Mechanism.__init__(self, dataset, specs, domain, mapping)
         self.iters = iters
-        self.weight3 = weight3
         self.warmup = warmup
         self.elimination_order = None
-        self.mapping = mapping
         self.save=save
         self.is_encoded = is_encoded
         self.data=self.load_data(is_encoded=self.is_encoded)
-        print(self.data)
         self.delta=delta
         self.measurements = []
         self.supports = {}
         for col in self.data.columns:
             self.supports[col] = np.asarray([True for j in range(self.domain[col])])
-        print("sssssssssssssssssssssssssssssssssssssssssss:",self.supports)
         
     def shrink_domain(self,epsilon, delta=2.2820610e-12, bound = 0):
-    #    data=self.load_data(is_encoded=self.is_encoded)
+        # measure all one-way marginals and shrink domain according to noisy measurements
         data=self.data
-        print(data.head())
         self.round1=list(self.column_order)
         self.delta=delta
         sigma = moments_calibration(1.0, 1.0, epsilon, delta)
@@ -130,34 +145,24 @@ class Match3(Mechanism):
             if self.domain[col] <= bound:
                 supports[col] = np.asarray([True for j in range(self.domain[col])])
                 del(self.round1[i])
+        # round1 measurements will be weighted to have L2 sensitivity 1       
         weights = np.ones(len(self.round1))
-        weights /= np.linalg.norm(weights) # now has L2 norm = 1                                                                                                                                               
-
-
-#        self.measurements = []
-
-        
+        weights /= np.linalg.norm(weights) # now has L2 norm = 1
         for col, wgt in zip(self.round1, weights):
-            ##########################                                                                                                                                                                          
-            ### Noise-addition step ##                                                                                                                                                                          
-            ##########################                                                                                                     
-            #If the column has fewer possible values than the bound we just leave it be.
-            #print(self.mapping[col])
-            
-            
+            ##########################
+            ### Noise-addition step ##
+            ##########################        
             proj = (col,)
             hist = np.asarray(data[col].value_counts())
             print(hist)
             noise = sigma*np.random.randn(hist.size)
             y = wgt*hist + noise
-            
-            #####################                                                                                                                                                                               
-            ## Post-processing ##                                                                                                                                                                               
-            #####################                                                                                                                                                                         
+            #####################
+            ## Post-processing ##
+            #####################
             sup = y >= 3*sigma
-            supports[col] = sup
-            print(col, self.domain[col], sup.sum())
-            #print(col, len(self.domain[col]), sup.sum())                                                                                                                                                  
+            #If the column has fewer possible values than the bound we just leave it be.  
+            supports[col] = sup       
             if sup.sum() == y.size:
                 y2 = y
                 I2 = matrix.Identity(y.size)
@@ -167,25 +172,22 @@ class Match3(Mechanism):
                 I2[-1] = 1.0 / np.sqrt(y.size - y2.size + 1.0)
                 y2[-1] /= np.sqrt(y.size - y2.size + 1.0)
                 I2 = sparse.diags(I2)
-                
             self.measurements.append( (I2, y2/wgt, 1.0/wgt, proj) )
+            
         self.supports=supports
-        print("before transform data")
         data,new_domain=transform_data(data,self.domain,supports)
-        print("after transform data")
         self.domain=new_domain
         self.data=data
-        print("shrink ok")
         return data, new_domain
 
             
-    def measure(self,round2, from_r=True):
-        print("round2,",round2)
+    def measure(self,round2, from_r=False):
+        # measure selected queries, which are round2 queries
+        print("selected queries:",round2)
         if from_r:
             round2 = r_to_python(round2, list(self.column_order))
         self.round2 = round2  #round2 is a query list[]
-        print("ok round2,",round2)
-        # round1 and round2 measurements will be weighted to have L2 sensitivity 1
+        # round2 measurements will be weighted to have L2 sensitivity 1
         # perform round 2 measurments over compressed domain
         weights = np.ones(len(self.round2))
         weights /= np.linalg.norm(weights) # now has L2 norm = 1
@@ -194,86 +196,50 @@ class Match3(Mechanism):
             ## Noise-addition step ##
             #########################
             indices = itemgetter(*proj)(self.domain)
-            print(proj, indices)
             hist = datavector(self.data[list(proj)], indices)
             Q = matrix.Identity(hist.size)
-
             noise = self.sigma*np.random.randn(Q.shape[0])
             y = wgt*Q.dot(hist) + noise
             self.measurements.append( (Q, y/wgt, 1.0/wgt, proj) )
 
     def postprocess(self):
+        #use noisy measurements to fit PGM inference
+        #and generate synthetic data
         iters = self.iters
         domain = self.domain
         temp_domain = Domain.fromdict(domain)
         engine = FactoredInference(temp_domain,
                                     structural_zeros=None,
-                                    iters=500,
+                                    iters=10000,
                                     log=True,
-                                    warm_start=True,
+                                    warm_start=False,
                                     elim_order=self.elimination_order)
         self.engine = engine
-        cb = mbi.callbacks.Logger(engine)
+        engine.estimate(self.measurements)
 
-        if self.warmup:
-            engine._setup(self.measurements, None)
-            oneway = {}
-            for i in range(len(self.round1)):
-                p = self.round1[i]
-                y = self.measurements[i][1]
-                y = np.maximum(y, 1)
-                y /= y.sum()
-                print(temp_domain.project(p), p, y.shape)
-                oneway[p] = Factor(temp_domain.project(p), y)
-            marginals = {}
-            for cl in engine.model.cliques:
-                marginals[cl] = reduce(lambda x,y: x*y, [oneway[p] for p in cl])
-
-            theta = engine.model.mle(marginals)
-            engine.potentials = theta
-            engine.marginals = engine.model.belief_propagation(theta)
-
-        checkpt = self.save[:-4] + '-checkpt.csv'
-        
-        for i in range(int(self.iters) // 500):
-            
-            engine.infer(self.measurements, engine='MD', callback=cb)
-
-            if i % 4 == 3:
-                self.synthetic = engine.model.synthetic_data()
-                self.synthetic = reverse_data(self.synthetic, self.supports)
-                self.synthetic_df = self.transform_domain(self.synthetic.df, self.mapping)
-                self.synthetic_df.to_csv(checkpt, index=False)
-   
-        if os.path.exists(checkpt):
-            os.remove(checkpt)
-
-        self.synthetic = engine.model.synthetic_data()
+        self.synthetic = self.engine.model.synthetic_data()
         self.synthetic = reverse_data(self.synthetic, self.supports)
 #        print("postprocess:",self.synthetic.df)
 
-    def privbayes_query_selection(self,eps,seed):
+
+    def privbayes_query_selection(self,eps,theta,seed):
+        #cite: changed from privbayes methods in Ektelo
+        #use privbayes to select a set of marginal queries
         domain=self.domain
-        print(domain)
         config = ''
         for a in list(self.data.columns):
             values = [str(i) for i in range(domain[a])]
             config += 'D ' + ' '.join(values) + ' \n'
         config = config.encode('utf-8')
-        print(config)
-        print( self.data.values )
         values = np.ascontiguousarray(self.data.values.astype(np.int32))     
-        ans = privBayesSelect.py_get_model(values, config, eps, 1.0, seed)
-        print("ans",ans)
+        ans = privBayesSelect.py_get_model(values, config, eps, theta, seed)
         ans = ans.decode('utf-8')[:-1]
-        print(ans)
         projections = []
         for m in ans.split('\n'):
             p = [list(self.data.columns)[int(a)] for a in m.split(',')[::2]]
             projections.append(tuple(p))
-        print(projections)
         return projections
-        
+    
 def default_params():
     """
     Return default parameters to run this program
@@ -311,27 +277,11 @@ if __name__ == '__main__':
 
     parser.set_defaults(**default_params())
     args = parser.parse_args()
-
-    if args.epsilon <= 0.3:
-        iters = 7500
-        weight3 = 8.0
-    elif args.epsilon >= 4.0:
-        iters = 10000
-        weight3 = 4.0
-    else:
-        iters = 750 #7500
-        weight3 = 6.0
-
-    mech = Match3(args.dataset, args.specs, args.domain, args.mapping, args.delta, args.save, iters=iters, weight3=weight3, warmup=True)
+    iters = 750 #7500
+    
+    mech = Match3(args.dataset, args.specs, args.domain, args.mapping, args.delta, args.save, iters=iters, warmup=True)
     mech.shrink_domain(args.epsilon/2,args.delta)
     round2 = mech.privbayes_query_selection(eps=args.epsilon/2,seed=0)
-    '''
-    selected_queries = []
-    a = open("queries.txt", 'r')
-    for line in a.readlines():
-        temp = tuple(line.strip('\n').split('_'))
-        selected_queries.append(temp)
-    round2=selected_queries    
-    '''
+
     mech.run(round2,from_r =False) #round2 is a query list [   ]
     
