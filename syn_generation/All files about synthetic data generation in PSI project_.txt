@@ -1,0 +1,13 @@
+All files about synthetic data generation in PSI project:
+
+* Graphical Model based Algorithm Desciption:
+   * https://www.overleaf.com/project/5d29148188dcf971d86cb7bc#
+* Synthetic Data Generation Code Guide:
+   * https://docs.google.com/document/d/1Ua8NCCQCNCYvEdY-RF91wDDZ1osn-IWty6d1bs35Kg0/edit?usp=sharing
+* Summary of what we did for Synthetic Data Generation:
+   * https://docs.google.com/document/d/12ySddRqiG2lmoGM7ecoRs1O_8JU-ZVHSxLz53HE22_E/edit?usp=sharing
+* Final presentation:
+   * https://docs.google.com/presentation/d/1ixRzcpWHuJJWOF9GRHK1C53127mpqoNPagaPSh3Ddt0/edit?usp=sharing
+* First presentation:
+   * https://docs.google.com/presentation/d/1IXzp4NtwgZJ5Sjsmp4QVpxoJiftPAWqVMqNqBjeYcgw/edit?usp=sharing
+ 
